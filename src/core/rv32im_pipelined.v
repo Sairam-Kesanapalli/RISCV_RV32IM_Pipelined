@@ -15,7 +15,7 @@
  *    +-----------------+------------+--------------+---> Write Back to Registers
  *
  *********************************************************************************/
-module rv32im_multi_cycle #(
+module rv32im_pipelined #(
     parameter XLEN = 32
 )(
     input clk,
@@ -28,7 +28,7 @@ module rv32im_multi_cycle #(
     // The Program Counter (PC) holds the address of the current instruction.
     reg [XLEN-1:0] PC;
     wire [XLEN-1:0] PC_next;
-
+    wire [XLEN-1:0] PC_plus_4 = PC + 4;
     // Fetch the 32-bit instruction from memory using the PC.
     wire [XLEN-1:0] mem_instr;
 
