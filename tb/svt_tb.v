@@ -5,7 +5,7 @@ module svt_tb;
     reg rst_n;
 
     // Processor Instantiation
-    rv32im_multi_cycle rv (
+    rv32im_pipelined rv (
         .clk(clk),
         .rst_n(rst_n)
     );
