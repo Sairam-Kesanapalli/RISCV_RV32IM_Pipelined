@@ -1,0 +1,34 @@
+// R-TYPE (ADD, SUB, AND, OR ETC)
+
+31   25 24 20 19 15 14 12 11 7 6 0
+funct7 rs2   rs1   funct3 rd   opcode
+
+
+// I-TYPE (ADDI, ANDI ETC)
+
+31          20 19 15 14 12 11 7 6 0
+imm[11:0]     rs1   funct3 rd  opcode
+
+
+// S-TYPE (SW ETC)
+
+31 25 24 20 19 15 14 12 11 7 6 0
+imm[11:5] rs2   rs1   funct3 imm[4:0] opcode
+
+
+// B-TYPE (BEQ, BNE, BLT ETC)
+
+31    25 24 20 19 15 14 12 11    7 6 0
+imm12 imm10:5 rs2 rs1 funct3 imm4:1 imm11 opcode
+
+
+// U-TYPE (LUI, AUIPC)
+
+31             12 11 7 6 0
+imm[31:12]       rd opcode
+
+
+// J-TYPE (JAL, JALR)
+
+31 30:21 20 19:12 11:7 6:0
+imm20 imm10:1 imm11 imm19:12 rd opcode

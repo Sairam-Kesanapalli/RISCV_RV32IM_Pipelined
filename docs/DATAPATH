@@ -1,0 +1,16 @@
+        PC
+         ↓
+  Instruction Memory
+         ↓
+   Decode Stage
+ ┌─────────────────────┐
+ │ Control Unit        │
+ │ Register File       │
+ │ Immediate Generator │
+ └─────────────────────┘
+         ↓
+         ALU
+         ↓
+     Data Memory
+         ↓
+      Write Back
