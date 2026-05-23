@@ -29,54 +29,98 @@ The hallmark of this repository is the complete hardware-realistic integration o
 ### 5-Stage Pipeline Overview
 
 ```mermaid
-graph TD
-    subgraph IF [Instruction Fetch]
-        PC[PC Register] --> IMEM[Instruction Memory]
-        PC --> PC_ADD[PC + 4 Adder]
+graph LR
+    %% ── Stages ────────────────────────────────────────────────────────────────
+    subgraph IF ["① IF — Instruction Fetch"]
+        direction TB
+        IMEM["Instruction\nMemory"]
+        PC["PC\nRegister"]
+        PC4["PC + 4\nAdder"]
+        PC -->|addr| IMEM
+        PC --> PC4
     end
 
-    IF -->|IF/ID Reg| ID
+    IFREG(["IF/ID\nReg"])
 
-    subgraph ID [Instruction Decode]
-        DEC[Combinational Control]
-        RF[Register File]
-        IMM[Immediate Generator]
+    subgraph ID ["② ID — Instruction Decode"]
+        direction TB
+        CU["Control Unit\n(Combinational)"]
+        RF["Register File\n(32 × 32)"]
+        IG["Immediate\nGenerator"]
     end
 
-    ID -->|ID/EX Reg| EX
+    IDREG(["ID/EX\nReg"])
 
-    subgraph EX [Execute]
-        ALU[Main ALU]
-        MULDIV[Iterative Multiplier/Divider]
-        FWD[Forwarding & Hazard Unit]
-        B_ADD[Branch Target Adder]
+    subgraph EX ["③ EX — Execute"]
+        direction TB
+        MUXA["MUX A\nPC / rs1 / 0"]
+        MUXB["MUX B\nrs2 / imm / 4"]
+        ALU["ALU\n(32-bit)"]
+        MULDIV["MUL/DIV\n(32-cycle iter.)"]
+        BREVAL["Branch\nEvaluator"]
+        TADD["Target Adder\nPC + imm"]
+        RESULT["EX Result\nMux"]
+        HDU["Hazard Detection\n& Forwarding Unit"]
     end
 
-    EX -->|EX/MEM Reg| MEM
+    EXREG(["EX/MEM\nReg"])
 
-    subgraph MEM [Memory Access]
-        DMEM[Data Memory]
+    subgraph MEM ["④ MEM — Memory Access"]
+        direction TB
+        DMEM["Data\nMemory"]
     end
 
-    MEM -->|MEM/WB Reg| WB
+    MEMREG(["MEM/WB\nReg"])
 
-    subgraph WB [Write-Back]
-        MUX[Write-Back Mux]
+    subgraph WB ["⑤ WB — Write-Back"]
+        direction TB
+        WBMUX["MUX\nALU / Mem Data"]
     end
 
-    WB -->|Write Data & RegWrite| RF
-    FWD -.->|Forwarding Paths| ALU
+    %% ── Forward (left-to-right) flow ──────────────────────────────────────────
+    IF --> IFREG --> ID --> IDREG --> EX --> EXREG --> MEM --> MEMREG --> WB
+
+    %% ── Write-Back to Register File (WB → ID) ─────────────────────────────────
+    WB -- "wb_write_data\n(mem_wb_rd, mem_wb_RegWrite)" --> RF
+
+    %% ── PC Next selection (EX → IF) ───────────────────────────────────────────
+    TADD -. "target_address\n(branch/jump taken)" .-> PC
+    PC4 -. "PC+4\n(no branch)" .-> PC
+
+    %% ── Forwarding paths (EX/MEM → EX, MEM/WB → EX) ──────────────────────────
+    EXREG -. "EX→EX forward\n(ex_mem_alu_result)" .-> HDU
+    MEMREG -. "MEM→EX forward\n(wb_write_data)" .-> HDU
+    HDU -. "forwardA / forwardB" .-> MUXA
+    HDU -. "forwardA / forwardB" .-> MUXB
+
+    %% ── Stall & Flush control (EX → IF/ID) ────────────────────────────────────
+    HDU -. "pipeline_stall\n(load-use / MUL-DIV)" .-> IFREG
+    HDU -. "pipeline_stall" .-> IDREG
+    BREVAL -. "flush\n(take_branch_or_jump)" .-> IFREG
+    BREVAL -. "flush" .-> IDREG
 ```
+
+> **Pipeline Register Key** — `IF/ID`, `ID/EX`, `EX/MEM`, `MEM/WB` are sequential edge-triggered registers that boundary-separate each stage and carry both datapath values and control signals downstream.
+
+### Hazard Summary
+
+| Hazard Type | Detection | Resolution | Penalty |
+|---|---|---|---|
+| **EX-to-EX Data** | `ex_mem_rd == id_ex_rs{1,2}` | MUX A/B forward `ex_mem_alu_result` | **0 cycles** |
+| **MEM-to-EX Data** | `mem_wb_rd == id_ex_rs{1,2}` | MUX A/B forward `wb_write_data` | **0 cycles** |
+| **Load-Use** | `id_ex_MemRead && rd matches rs` | Stall PC + IF/ID, inject bubble into ID/EX | **1 cycle** |
+| **Control (Taken Branch/Jump)** | `take_branch_or_jump` in EX | Flush IF/ID and ID/EX (NOP injection) | **2 cycles** |
+| **M-Extension (MUL/DIV)** | `is_mul_div && ~done` | Hold all pipeline registers; inject EX/MEM bubble | **32 cycles** |
 
 ### Instruction Performance Characterization
 
-| Condition / Instruction Type | Throughput (CPI) | Latency | Pipeline Behavior |
+| Condition / Instruction Type | Wasted Cycles | Effective CPI | Pipeline Behavior |
 |---|---|---|---|
-| **Ideal Arithmetic / Logic** | **1** | 5 Cycles | Executes completely overlapped with no stalls. |
-| **Data Hazard (ALU-to-ALU)** | **1** | 5 Cycles | Forwarding unit routes execution results back to ALU; no stall cycles. |
-| **Load-Use Hazard** | **2** | 6 Cycles | Installs a 1-cycle bubble in the pipeline to let memory read complete. |
-| **Control Hazard (Taken Branch/Jump)** | **3** | 5 Cycles | Flushes the IF/ID pipeline registers, discarding fetched instructions. |
-| **M-Extension Math (MUL/DIV)** | **33** | 37 Cycles | Stalls the EX stage for 32 cycles while the math unit iterates. |
+| **Ideal Arithmetic / Logic** | 0 | **1** | Fully overlapped; forwarding covers all data hazards. |
+| **Data Hazard (ALU-to-ALU)** | 0 | **1** | EX/MEM or MEM/WB result forwarded directly to ALU inputs. |
+| **Load-Use Hazard** | 1 | **2** | 1-cycle bubble inserted so memory read reaches EX via forwarding. |
+| **Taken Branch / Jump** | 2 | **3** | 2 wrongly-fetched instructions flushed with NOP bubbles. |
+| **M-Extension MUL/DIV** | 32 | **33** | Pipeline stalled for 32 iterations; resumes after `done` pulses. |
 
 ---
 
