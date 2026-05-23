@@ -1,55 +1,82 @@
-# RISC-V RV32IM Multi-Cycle Processor
+# RISC-V RV32IM 5-Stage Pipelined Processor
 
-A highly optimized, fully synthesizable **multi-cycle RISC-V RV32IM processor** implemented in synthesizable Verilog. It features a complete Finite State Machine (FSM) control unit, cycle-accurate Python golden model for co-simulation, dynamic verification harness, and a robust CI regression test pipeline.
+A highly optimized, fully synthesizable **5-stage pipelined RISC-V RV32IM processor** implemented in synthesizable Verilog. It features a spatial 5-stage pipeline, a combinational control unit, a dynamic hazard detection and forwarding unit to resolve data hazards, a hardware-realistic iterative M-extension (multiplication and division) with pipeline stall support, a cycle-accurate Python golden model for co-simulation, a dynamic verification harness, and a robust CI regression test pipeline.
 
-The hallmark of this repository is the complete hardware-realistic integration of the **RISC-V M-Extension** (Multiplication and Division) featuring 32-cycle iterative execution and dynamic pipeline stalling.
+The hallmark of this repository is the complete hardware-realistic integration of the **RISC-V M-Extension** (Multiplication and Division) featuring 32-cycle iterative execution and dynamic pipeline stalling within a classic pipelined datapath.
 
 ---
 
 ## Key Features
 
-1. **RV32I Core**: Full support for all base integer instructions (R-type, I-type, Load/Store, Branch, Jumps, Upper Immediate).
-2. **Iterative M-Extension (`mul_div.v`)**:
+1. **5-Stage Spatial Pipeline**: Overlaps instruction execution across five distinct stages: Fetch (IF), Decode (ID), Execute (EX), Memory (MEM), and Write-Back (WB) for maximum throughput.
+2. **Hazard Detection & Forwarding Unit**:
+   - **Data Forwarding**: Resolves EX-to-EX and MEM-to-EX data hazards without stalling, routing intermediate results directly to the ALU inputs.
+   - **Load-Use Stall**: Detects load-use hazards and automatically inserts a 1-cycle pipeline bubble (stall).
+   - **Control Hazard Flush**: Flushes instructions in the IF and ID stages upon resolving taken branches or jumps in the EX stage, minimizing branch penalty.
+3. **Combinational Control Unit (`control_unit.v`)**: Generates all instruction control signals combinationaly during the Decode (ID) stage, which propagate downstream through sequential pipeline registers.
+4. **Iterative M-Extension (`mul_div.v`)**:
    - **Multiplication**: A hardware-realistic 32-cycle shift-and-add multiplier supporting `MUL`, `MULH`, `MULHSU`, and `MULHU`.
    - **Division / Remainder**: A hardware-realistic 32-cycle restoring divider supporting `DIV`, `DIVU`, `REM`, and `REMU`.
-3. **Pipeline Stall Protocol**: Main processor controller FSM stalls the execution phase (`EXEC_R_OR_MUL`) until the math module sets the `alu_done` signal, avoiding pipeline flushes.
-4. **Co-Simulation SVT Framework**: Dynamic register and memory validation comparing the physical RTL simulation directly against an automated Python Instruction Set Simulator (ISS) golden model.
-5. **CI Regression Tests**: 7 different operation-specific categories running parallel test injections using runtime `$readmemh` parameter mapping (`+TEST_DIR`).
-6. **Continuous Integration**: GitHub Actions workflow (.github/workflows/makefile.yml) automatically compiles, verifies SVT, and runs regressions on all push and pull requests.
+   - **Pipeline Stall**: Stalls the pipeline in the EX stage while the iterative multiplier/divider is active, resuming execution smoothly upon completion.
+5. **Co-Simulation SVT Framework**: Dynamic register and memory validation comparing the physical RTL simulation directly against an automated Python Instruction Set Simulator (ISS) golden model.
+6. **CI Regression Tests**: 7 different operation-specific categories running parallel test injections using runtime `$readmemh` parameter mapping (`+TEST_DIR`).
+7. **Continuous Integration**: GitHub Actions workflow (.github/workflows/makefile.yml) automatically compiles, verifies SVT, and runs regressions on all push and pull requests.
 
 ---
 
 ## Architectural Details
 
-### FSM Execution Stages
+### 5-Stage Pipeline Overview
 
-| State | Cycle | Description |
-|---|---|---|
-| `FETCH` | 1 | Fetch instruction from instruction memory into IR |
-| `DECODE` | 2 | Decode opcode, read register file, compute immediate, calculate PC+Imm |
-| `EXEC_R_OR_MUL` | 3–35 | Execute standard ALU operation (1 cycle) OR stall for Multi-cycle Math (32 cycles) |
-| `EXEC_I` | 3 | Execute immediate ALU operation |
-| `MEM_ADDR` | 3 | Compute memory address for Load/Store |
-| `BRANCH_EX` | 3 | Evaluate branch condition |
-| `JUMP_EX / JALR_EX` | 3 | Compute jump target |
-| `MEM_READ` | 4 | Read data from memory (Load) |
-| `MEM_WRITE` | 4 | Write data to memory (Store) |
-| `MEM_WB` | 5 | Write loaded data back to register file |
-| `PC_INC` | 3–4 | Increment PC and write ALU result to register file |
+```mermaid
+graph TD
+    subgraph IF [Instruction Fetch]
+        PC[PC Register] --> IMEM[Instruction Memory]
+        PC --> PC_ADD[PC + 4 Adder]
+    end
 
-### Cycle Count Per Instruction
+    IF -->|IF/ID Reg| ID
 
-| Instruction Type | Cycles | FSM Stages Traversed |
-|---|---|---|
-| R-Type (Standard) | 4 | FETCH → DECODE → EXEC_R_OR_MUL → PC_INC |
-| **M-Extension Math** | **37** | FETCH → DECODE → EXEC_R_OR_MUL (Stalls for 32 cycles) → PC_INC |
-| I-Type | 4 | FETCH → DECODE → EXEC_I → PC_INC |
-| LUI / AUIPC | 3 | FETCH → DECODE → PC_INC |
-| Load (LW) | 5 | FETCH → DECODE → MEM_ADDR → MEM_READ → MEM_WB |
-| Store (SW) | 4 | FETCH → DECODE → MEM_ADDR → MEM_WRITE |
-| Branch (taken) | 3 | FETCH → DECODE → BRANCH_EX |
-| Branch (not taken) | 4 | FETCH → DECODE → BRANCH_EX → PC_INC |
-| JAL / JALR | 3 | FETCH → DECODE → JUMP_EX / JALR_EX |
+    subgraph ID [Instruction Decode]
+        DEC[Combinational Control]
+        RF[Register File]
+        IMM[Immediate Generator]
+    end
+
+    ID -->|ID/EX Reg| EX
+
+    subgraph EX [Execute]
+        ALU[Main ALU]
+        MULDIV[Iterative Multiplier/Divider]
+        FWD[Forwarding & Hazard Unit]
+        B_ADD[Branch Target Adder]
+    end
+
+    EX -->|EX/MEM Reg| MEM
+
+    subgraph MEM [Memory Access]
+        DMEM[Data Memory]
+    end
+
+    MEM -->|MEM/WB Reg| WB
+
+    subgraph WB [Write-Back]
+        MUX[Write-Back Mux]
+    end
+
+    WB -->|Write Data & RegWrite| RF
+    FWD -.->|Forwarding Paths| ALU
+```
+
+### Instruction Performance Characterization
+
+| Condition / Instruction Type | Throughput (CPI) | Latency | Pipeline Behavior |
+|---|---|---|---|
+| **Ideal Arithmetic / Logic** | **1** | 5 Cycles | Executes completely overlapped with no stalls. |
+| **Data Hazard (ALU-to-ALU)** | **1** | 5 Cycles | Forwarding unit routes execution results back to ALU; no stall cycles. |
+| **Load-Use Hazard** | **2** | 6 Cycles | Installs a 1-cycle bubble in the pipeline to let memory read complete. |
+| **Control Hazard (Taken Branch/Jump)** | **3** | 5 Cycles | Flushes the IF/ID pipeline registers, discarding fetched instructions. |
+| **M-Extension Math (MUL/DIV)** | **33** | 37 Cycles | Stalls the EX stage for 32 cycles while the math unit iterates. |
 
 ---
 
@@ -72,14 +99,14 @@ The hallmark of this repository is the complete hardware-realistic integration o
 ## Directory Structure
 
 ```
-RISCV_RV32IM_Multi_Cycle/
+RISCV_RV32IM_Pipelined/
 ├── src/
 │   ├── core/
-│   │   ├── rv32im_multi_cycle.v  # Top-level datapath & control signals
-│   │   ├── control_unit.v        # Main 12-state FSM (handles M-extension stalls)
+│   │   ├── rv32im_pipelined.v    # Top-level datapath, hazard unit & pipeline registers
+│   │   ├── control_unit.v        # Combinational control unit
 │   │   ├── alu_control.v         # Decodes ALU operation (standard and M-type)
 │   │   ├── imm_gen.v             # Immediate generator (R/I/S/B/U/J formats)
-│   │   └── register.v            # 32x32 register file
+│   │   └── register.v            # 32x32 register file with internal forwarding
 │   ├── alu/
 │   │   ├── ALU_n_bit.v           # Base N-bit parameterized ALU
 │   │   ├── full_adder_n_bit.v    # Ripple-carry adder
@@ -88,8 +115,9 @@ RISCV_RV32IM_Multi_Cycle/
 │       ├── instruction_mem.v     # Dynamic runtime memory injection (readmemh)
 │       └── data_mem.v            # Data memory
 ├── tb/
-│   ├── rv32im_tb.v               # Base testbench
-│   └── svt_tb.v                  # Co-simulation verification testbench
+│   ├── rv32im_tb.v               # Main testbench (module: rv32im_tb)
+│   ├── svt_tb.v                  # Co-simulation verification testbench
+│   └── test_lw_sw.v              # Simple memory access sanity testbench
 ├── scripts/
 │   └── golden_model.py           # Cycle-accurate python instruction set simulator (ISS)
 ├── tests/
@@ -149,7 +177,7 @@ If even one test category reports a mismatch, `make regression` exits with a non
 
 ### 3. Continuous Integration (CI)
 GitHub Actions are fully integrated via `.github/workflows/makefile.yml`. Every single commit and pull request triggers a runner that:
-1. Spines up an Ubuntu container.
+1. Spins up an Ubuntu container.
 2. Installs `iverilog` and `python3` dependencies.
 3. Runs `make svt` to verify the baseline CPU integrity.
 4. Runs `make regression` to verify all 7 isolated hardware operations.
