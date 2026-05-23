@@ -35,7 +35,7 @@ OUT_MAIN = rv32im_sim
 OUT_DEBUG = debug_sim
 OUT_SVT = svt_sim
 
-.PHONY: all compile sim clean debug svt svt_golden
+.PHONY: all compile sim clean debug svt svt_golden wave wave-svt
 
 all: compile sim
 
@@ -83,6 +83,14 @@ regression:
 	echo "======================================================="; \
 	exit $$failed
 
+# Open GTKWave waveforms
+wave:
+	gtkwave RV32IM_verification.vcd &
+
+wave-svt:
+	gtkwave SVT_verification.vcd &
+
 # Clean up generated files
 clean:
 	rm -f $(OUT_MAIN) $(OUT_DEBUG) $(OUT_SVT) golden_sim *.vcd tb/expected_*.hex regression_tests/*/expected_*.hex
+
