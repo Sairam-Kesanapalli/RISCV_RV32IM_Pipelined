@@ -34,8 +34,8 @@ module register_file #(
             end
         end
 
-        // READ LOGIC
-        assign read_data1 = (rs1 == 0)? {DATA_WIDTH{1'b0}}: regs[rs1];
-        assign read_data2 = (rs2 == 0)? {DATA_WIDTH{1'b0}}: regs[rs2];
+        // READ LOGIC with internal forwarding (write-before-read) to avoid WB-to-ID hazards
+        assign read_data1 = (rs1 == 0)? {DATA_WIDTH{1'b0}}: ((rs1 == rd && reg_write)? write_data : regs[rs1]);
+        assign read_data2 = (rs2 == 0)? {DATA_WIDTH{1'b0}}: ((rs2 == rd && reg_write)? write_data : regs[rs2]);
 
 endmodule
