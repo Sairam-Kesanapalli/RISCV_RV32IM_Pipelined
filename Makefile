@@ -68,7 +68,7 @@ regression:
 	@echo "======================================================="
 	@$(CC) $(CFLAGS) -o $(OUT_SVT) tb/svt_tb.v $(SOURCES)
 	@failed=0; \
-	for test_dir in tests/* ; do \
+	for test_dir in regression_tests/* ; do \
 		if [ -d "$$test_dir" ]; then \
 			echo "Running $$test_dir..."; \
 			python3 scripts/golden_model.py --test-dir "$$test_dir" > /dev/null; \
@@ -85,4 +85,4 @@ regression:
 
 # Clean up generated files
 clean:
-	rm -f $(OUT_MAIN) $(OUT_DEBUG) $(OUT_SVT) golden_sim *.vcd tb/expected_*.hex tests/*/expected_*.hex
+	rm -f $(OUT_MAIN) $(OUT_DEBUG) $(OUT_SVT) golden_sim *.vcd tb/expected_*.hex regression_tests/*/expected_*.hex
