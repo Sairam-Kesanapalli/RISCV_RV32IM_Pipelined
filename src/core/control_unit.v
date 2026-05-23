@@ -1,9 +1,9 @@
 /*********************************************************************************
- * MULTI-CYCLE FSM CONTROL UNIT
+ * PIPELINED CONTROL UNIT
  * -------------------------------------------------------------------------------
- * This acts as the "Traffic Cop" over multiple clock cycles. It explicitly
- * controls every multiplexer and register write-enable signal based on the
- * current stage of instruction execution (Fetch -> Decode -> Execute -> etc.)
+ * This generates single-cycle control signals for the decoded instructions
+ * in the ID stage, which are then propagated through the pipeline registers
+ * to control downstream execution stages.
  *********************************************************************************/
 module control_unit (
 

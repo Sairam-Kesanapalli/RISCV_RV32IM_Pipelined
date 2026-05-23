@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-module rv32i_tb;
+module rv32im_tb;
 reg clk;
 reg rst_n;
 
@@ -17,7 +17,7 @@ always #5 clk = ~clk;
        $dumpfile("RV32IM_verification.vcd");
        $dumpvars;
        for (i = 0; i < 32; i = i + 1) begin
-           $dumpvars(0, rv32i_tb.rv.rf.regs[i]);
+           $dumpvars(0, rv32im_tb.rv.rf.regs[i]);
        end
         clk = 0;
         rst_n = 0;
@@ -33,7 +33,7 @@ always #5 clk = ~clk;
 
        // ---- Verification ----
        $display("");
-       $display("===== RV32I Base Checks =====");
+       $display("===== RV32IM Base Checks =====");
        $display("x1  = %0d (expected 10)",  $signed(rv.rf.regs[1]));
        $display("x2  = %0d (expected 3)",   $signed(rv.rf.regs[2]));
        $display("x3  = %0d (expected 13)",  $signed(rv.rf.regs[3]));  // ADD x3, x1, x2

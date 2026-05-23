@@ -1,7 +1,7 @@
 /*********************************************************************************
  * RV32IM 5-STAGE PIPELINED PROCESSOR
  * -------------------------------------------------------------------------------
- * This is the pipelined core, refactored from the multi-cycle design into a
+ * This is the pipelined core, implemented as a
  * classic 5-stage pipeline: Fetch (IF), Decode (ID), Execute (EX), Memory (MEM),
  * and Write-Back (WB).
  *********************************************************************************/

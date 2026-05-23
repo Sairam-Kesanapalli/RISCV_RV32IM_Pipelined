@@ -43,8 +43,8 @@ module svt_tb;
         #10;
         rst_n = 1;
         
-        // Wait sufficient time for multi-cycle execution
-        // Each instruction takes 3-5 cycles (30-50ns). 200 instructions ≈ 8000ns
+        // Wait sufficient time for pipelined execution
+        // Under ideal conditions, CPI ≈ 1. With stalls and iterative mul/div (32 cycles each), #15000 is safe.
         #15000;  // Increased for iterative mul/div (32 cycles each)
         
         $display("\n=======================================================");
