@@ -1,19 +1,9 @@
 /*********************************************************************************
- * RV32I SINGLE-CYCLE PROCESSOR TOP MODULE
+ * RV32IM 5-STAGE PIPELINED PROCESSOR
  * -------------------------------------------------------------------------------
- * This is the heart of the processor! It connects all the sub-modules together
- * to form a complete datapath. Because it is "single-cycle", every instruction
- * completely finishes in exactly one clock tick.
- *
- * HIGH-LEVEL DATAPATH FLOW:
- *
- *  [PC] ---> [Instruction Memory] ---> [Control Unit]
- *    |                 |                      |
- *    |                 v                      v
- *    |           [Registers] ---> [ALU] ---> [Data Memory]
- *    |                 |            |              |
- *    +-----------------+------------+--------------+---> Write Back to Registers
- *
+ * This is the pipelined core, refactored from the multi-cycle design into a
+ * classic 5-stage pipeline: Fetch (IF), Decode (ID), Execute (EX), Memory (MEM),
+ * and Write-Back (WB).
  *********************************************************************************/
 module rv32im_pipelined #(
     parameter XLEN = 32
@@ -23,13 +13,121 @@ module rv32im_pipelined #(
 );
 
     // =========================================================================
-    // 1. INSTRUCTION FETCH (IF) & MULTI-CYCLE STATE REGISTERS
+    // PIPELINE REGISTER AND WIRE DECLARATIONS (Declared at top for safe scoping)
     // =========================================================================
-    // The Program Counter (PC) holds the address of the current instruction.
+    
+    // Forward declarations of critical signals for safe scoping
+    wire take_branch_or_jump;
+    wire [XLEN-1:0] wb_write_data;
+    wire [6:0] opcode;
+    wire [4:0] rs1;
+    wire [4:0] rs2;
+
+    // IF/ID Pipeline Register
+    reg [XLEN-1:0] if_id_pc;
+    reg [XLEN-1:0] if_id_instr;
+
+    // ID/EX Pipeline Register
+    reg [XLEN-1:0] id_ex_pc;
+    reg [XLEN-1:0] id_ex_read_data1;
+    reg [XLEN-1:0] id_ex_read_data2;
+    reg [XLEN-1:0] id_ex_imm;
+    reg [6:0]      id_ex_funct7;
+    reg [4:0]      id_ex_rs1;
+    reg [4:0]      id_ex_rs2;
+    reg [4:0]      id_ex_rd;
+    reg [2:0]      id_ex_funct3;
+    reg [2:0]      id_ex_ALU_OP;
+    reg [1:0]      id_ex_ALUSrcA_ctrl;
+    reg [1:0]      id_ex_ALUSrcB_ctrl;  
+    reg            id_ex_RegWrite;
+    reg            id_ex_MemRead;
+    reg            id_ex_MemWrite;
+    reg            id_ex_MemToReg;
+    reg            id_ex_Branch;
+    reg            id_ex_Jump;
+
+    // EX/MEM Pipeline Register
+    reg [XLEN-1:0] ex_mem_alu_result;
+    reg [XLEN-1:0] ex_mem_write_data;
+    reg [4:0]      ex_mem_rd;
+    reg            ex_mem_MemRead;
+    reg            ex_mem_MemWrite;
+    reg            ex_mem_MemToReg;
+    reg            ex_mem_RegWrite;
+
+    // MEM/WB Pipeline Register
+    reg [XLEN-1:0] mem_wb_read_data;
+    reg [XLEN-1:0] mem_wb_alu_result;
+    reg [4:0]      mem_wb_rd;
+    reg            mem_wb_MemToReg;
+    reg            mem_wb_RegWrite;
+
+    // =========================================================================
+    // HAZARD DETECTION & FORWARDING UNIT
+    // =========================================================================
+    wire is_mul_div;
+    wire done;
+    wire stall = is_mul_div & ~done;
+
+    // Load-use stall detection
+    wire load_use_stall = id_ex_MemRead && (id_ex_rd != 0) &&
+                          ((id_ex_rd == rs1) || (id_ex_rd == rs2));
+    wire pipeline_stall = stall | load_use_stall;
+    wire flush = take_branch_or_jump;
+
+    // Forwarding logic to resolve data hazards
+    reg [1:0] forwardA;
+    reg [1:0] forwardB;
+    wire [XLEN-1:0] forwarded_read_data1;
+    wire [XLEN-1:0] forwarded_read_data2;
+
+    always @(*) begin
+        if (ex_mem_RegWrite && (ex_mem_rd != 0) && (ex_mem_rd == id_ex_rs1))
+            forwardA = 2'b10;
+        else if (mem_wb_RegWrite && (mem_wb_rd != 0) && (mem_wb_rd == id_ex_rs1))
+            forwardA = 2'b01;
+        else
+            forwardA = 2'b00;
+    end
+
+    always @(*) begin
+        if (ex_mem_RegWrite && (ex_mem_rd != 0) && (ex_mem_rd == id_ex_rs2))
+            forwardB = 2'b10;
+        else if (mem_wb_RegWrite && (mem_wb_rd != 0) && (mem_wb_rd == id_ex_rs2))
+            forwardB = 2'b01;
+        else
+            forwardB = 2'b00;
+    end
+
+    assign forwarded_read_data1 =
+        (forwardA == 2'b10) ? ex_mem_alu_result :
+        (forwardA == 2'b01) ? wb_write_data :
+        id_ex_read_data1;
+
+    assign forwarded_read_data2 =
+        (forwardB == 2'b10) ? ex_mem_alu_result :
+        (forwardB == 2'b01) ? wb_write_data :
+        id_ex_read_data2;
+
+    // Helper register to prevent start from asserting continuously during stall
+    reg ex_stage_md_active;
+    always @(posedge clk) begin
+        if (!rst_n)
+            ex_stage_md_active <= 1'b0;
+        else if (is_mul_div & ~done)
+            ex_stage_md_active <= 1'b1;
+        else
+            ex_stage_md_active <= 1'b0;
+    end
+    wire start = is_mul_div & ~ex_stage_md_active;
+
+    // =========================================================================
+    // 1. INSTRUCTION FETCH (IF) STAGE
+    // =========================================================================
     reg [XLEN-1:0] PC;
     wire [XLEN-1:0] PC_next;
     wire [XLEN-1:0] PC_plus_4 = PC + 4;
-    // Fetch the 32-bit instruction from memory using the PC.
     wire [XLEN-1:0] mem_instr;
 
     instruction_memory imem(
@@ -37,139 +135,188 @@ module rv32im_pipelined #(
         .instr(mem_instr)
     );
 
-    // ---------------------------------------------------------
-    // MULTI-CYCLE REGISTERS
-    // ---------------------------------------------------------
-    reg [XLEN-1:0] IR;      // Instruction Register
-    reg [XLEN-1:0] MDR;     // Memory Data Register
-    reg [XLEN-1:0] A;       // Register File Output 1
-    reg [XLEN-1:0] B;       // Register File Output 2
-    reg [XLEN-1:0] ALUOut;  // ALU Result Register
+    // End-of-program detection: freeze PC when reading uninitialized instruction memory (32'hx)
+    // to match the golden model's halt behavior.
+    wire halt = (mem_instr === 32'hxxxxxxxx);
 
-    // Pre-declare datapath wires used by state registers and control unit
-    reg branch_taken;
-    wire [XLEN-1:0] mem_data;
-    wire [XLEN-1:0] read_data1;
-    wire [XLEN-1:0] read_data2;
-    wire [XLEN-1:0] alu_result;
-    wire is_mul_div;
-    wire [31:0] mul_div_result;
+    // Update the PC sequentially on every clock edge, subject to stall and halt
+    always @(posedge clk) begin
+        if (!rst_n)
+            PC <= 0;
+        else if (!pipeline_stall && !halt)
+            PC <= PC_next;
+    end
 
-    // Control signals from FSM
-    wire IRWrite;
-    wire PCWrite;
-    wire [1:0] ALUSrcA_ctrl;
-    wire [1:0] ALUSrcB_ctrl;
-    wire [1:0] PCSource_ctrl;
-
+    // IF/ID Pipeline Register sequential update with stall and flush (control hazards)
     always @(posedge clk) begin
         if (!rst_n) begin
-            IR <= 32'b0;
-            MDR <= 32'b0;
-            A <= 32'b0;
-            B <= 32'b0;
-            ALUOut <= 32'b0;
-        end else begin
-            if (IRWrite) IR <= mem_instr;
-
-            // Unconditionally update architectural state registers
-            MDR <= mem_data;
-            A <= read_data1;
-            B <= read_data2;
-            ALUOut <= (is_mul_div) ? mul_div_result : alu_result;
+            if_id_pc    <= 0;
+            if_id_instr <= 32'h00000013; // NOP (addi x0, x0, 0)
+        end else if (flush) begin
+            if_id_pc    <= 0;
+            if_id_instr <= 32'h00000013; // NOP (addi x0, x0, 0)
+        end else if (!pipeline_stall) begin
+            if_id_pc    <= PC;
+            if_id_instr <= mem_instr;
         end
     end
 
-    // The Instruction Register (IR) holds the fetched instruction stable 
-    // across all clock cycles of execution!
-    wire [XLEN-1:0] instr = IR;
-
     // =========================================================================
-    // 2. INSTRUCTION DECODE (ID) & CONTROL
+    // 2. INSTRUCTION DECODE (ID) STAGE
     // =========================================================================
-    // Slice the 32-bit instruction into its specific fields according to RISC-V.
-    wire [6:0] opcode   = instr[6:0];
-    wire [4:0] rd       = instr[11:7];      // Destination register
-    wire [2:0] funct3   = instr[14:12];     // Function identifier (e.g., ADD vs SUB)
-    wire [4:0] rs1      = instr[19:15];     // Source register 1
-    wire [4:0] rs2      = instr[24:20];     // Source register 2
-    wire [6:0] funct7   = instr[31:25];     // Secondary function identifier
+    assign opcode       = if_id_instr[6:0];
+    wire [4:0] rd       = if_id_instr[11:7];      // Destination register
+    wire [2:0] funct3   = if_id_instr[14:12];     // Function identifier
+    assign rs1          = if_id_instr[19:15];     // Source register 1
+    assign rs2          = if_id_instr[24:20];     // Source register 2
+    wire [6:0] funct7   = if_id_instr[31:25];     // Secondary function identifier
 
-    // The Control Unit acts as the "brain". It looks at the opcode and turns on
-    // the correct signals to steer data through the datapath multiplexers.
-    wire RegWrite, MemRead, MemWrite, MemToReg, Branch, Jump;
+    // Control Unit outputs
+    wire [1:0] ALUSrcA_ctrl;
+    wire [1:0] ALUSrcB_ctrl;
     wire [2:0] ALU_OP;
-    wire busy;
-    wire done;
-    wire start;
+    wire MemRead, MemWrite, Branch, Jump, RegWrite, MemToReg;
 
     control_unit cu(
-        .clk(clk),
-        .rst_n(rst_n),
         .op_code(opcode),
-        .branch_taken(branch_taken),
-        .alu_done(~is_mul_div | done),
-        .is_busy(busy),
-        .PCWrite(PCWrite),
-        .IRWrite(IRWrite),
-        .RegWrite(RegWrite),
+        .ALUSrcA_ctrl(ALUSrcA_ctrl),
+        .ALUSrcB_ctrl(ALUSrcB_ctrl),
+        .ALU_OP(ALU_OP),
         .MemRead(MemRead),
         .MemWrite(MemWrite),
         .Branch(Branch),
         .Jump(Jump),
-        .ALUSrcA_ctrl(ALUSrcA_ctrl),
-        .ALUSrcB_ctrl(ALUSrcB_ctrl),
-        .PCSource_ctrl(PCSource_ctrl),
-        .MemToReg(MemToReg),
-        .ALU_OP(ALU_OP)
+        .RegWrite(RegWrite),
+        .MemToReg(MemToReg)
     );
 
-    // =========================================================================
-    // 3. REGISTER FILE & IMMEDIATE GENERATION
-    // =========================================================================
-    wire [XLEN-1:0] write_data;
+    // Register File outputs and write-back interface
+    wire [XLEN-1:0] read_data1;
+    wire [XLEN-1:0] read_data2;
 
-    // Read values from rs1 and rs2. If the instruction writes back, it saves to rd.
     register_file rf(
         .clk(clk),
         .rst_n(rst_n),
-        .reg_write(RegWrite),
-        .rd(rd),
-        .write_data(write_data),
+        .reg_write(mem_wb_RegWrite),
+        .rd(mem_wb_rd),
+        .write_data(wb_write_data),
         .rs1(rs1),
         .rs2(rs2),
         .read_data1(read_data1),
         .read_data2(read_data2)
     );
 
-    // Extract and sign-extend the immediate value hidden inside the instruction.
+    // Sign-extend immediate generator
     wire [XLEN-1:0] imm_out;
     imm_gen ig (
-        .instr(instr),
+        .instr(if_id_instr),
         .imm_out(imm_out)
     );
 
+    // ID/EX Pipeline Register sequential update with stall and flush (control hazards)
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            id_ex_pc            <= 0;
+            id_ex_read_data1    <= 0;
+            id_ex_read_data2    <= 0;
+            id_ex_imm           <= 0;
+            id_ex_funct7        <= 0;
+            id_ex_rs1           <= 0;
+            id_ex_rs2           <= 0;
+            id_ex_rd            <= 0;
+            id_ex_funct3        <= 0;
+            id_ex_ALU_OP        <= 0;
+            id_ex_ALUSrcA_ctrl  <= 0;
+            id_ex_ALUSrcB_ctrl  <= 0;
+            id_ex_RegWrite      <= 0;
+            id_ex_MemRead       <= 0;
+            id_ex_MemWrite      <= 0;
+            id_ex_MemToReg      <= 0;
+            id_ex_Branch        <= 0;
+            id_ex_Jump          <= 0;
+        end else if (flush) begin
+            id_ex_pc            <= 0;
+            id_ex_read_data1    <= 0;
+            id_ex_read_data2    <= 0;
+            id_ex_imm           <= 0;
+            id_ex_funct7        <= 0;
+            id_ex_rs1           <= 0;
+            id_ex_rs2           <= 0;
+            id_ex_rd            <= 0;
+            id_ex_funct3        <= 0;
+            id_ex_ALU_OP        <= 0;
+            id_ex_ALUSrcA_ctrl  <= 0;
+            id_ex_ALUSrcB_ctrl  <= 0;
+            id_ex_RegWrite      <= 0;
+            id_ex_MemRead       <= 0;
+            id_ex_MemWrite      <= 0;
+            id_ex_MemToReg      <= 0;
+            id_ex_Branch        <= 0;
+            id_ex_Jump          <= 0;
+        end else if (stall) begin
+            // Multiplier stall: hold state stable
+        end else if (load_use_stall) begin
+            // Load-use stall: inject a bubble (clear control signals, but keep source regs to avoid forwarding issues)
+            id_ex_pc            <= 0;
+            id_ex_read_data1    <= 0;
+            id_ex_read_data2    <= 0;
+            id_ex_imm           <= 0;
+            id_ex_funct7        <= 0;
+            id_ex_rs1           <= 0;
+            id_ex_rs2           <= 0;
+            id_ex_rd            <= 0;
+            id_ex_funct3        <= 0;
+            id_ex_ALU_OP        <= 0;
+            id_ex_ALUSrcA_ctrl  <= 0;
+            id_ex_ALUSrcB_ctrl  <= 0;
+            id_ex_RegWrite      <= 0;
+            id_ex_MemRead       <= 0;
+            id_ex_MemWrite      <= 0;
+            id_ex_MemToReg      <= 0;
+            id_ex_Branch        <= 0;
+            id_ex_Jump          <= 0;
+        end else begin
+            id_ex_pc            <= if_id_pc;
+            id_ex_read_data1    <= read_data1;
+            id_ex_read_data2    <= read_data2;
+            id_ex_imm           <= imm_out;
+            id_ex_funct7        <= funct7;
+            id_ex_rs1           <= rs1;
+            id_ex_rs2           <= rs2;
+            id_ex_rd            <= rd;
+            id_ex_funct3        <= funct3;
+            id_ex_ALU_OP        <= ALU_OP;
+            id_ex_ALUSrcA_ctrl  <= ALUSrcA_ctrl;
+            id_ex_ALUSrcB_ctrl  <= ALUSrcB_ctrl;
+            id_ex_RegWrite      <= RegWrite;
+            id_ex_MemRead       <= MemRead;
+            id_ex_MemWrite      <= MemWrite;
+            id_ex_MemToReg      <= MemToReg;
+            id_ex_Branch        <= Branch;
+            id_ex_Jump          <= Jump;
+        end
+    end
+
     // =========================================================================
-    // 4. EXECUTE (ALU)
+    // 3. EXECUTE (EX) STAGE
     // =========================================================================
-    // The ALU Control translates the generic ALU_OP from the main Control Unit
-    // and the instruction's funct3/funct7 into a specific 4-bit ALU command.
-    wire [2:0] md_op;   //Uses funct3
+    wire [2:0] md_op;   // Uses funct3
     wire [3:0] alu_op;
     alu_control ac(
-        .ALU_OP(ALU_OP),
-        .funct3(funct3),
-        .funct7(funct7),
+        .ALU_OP(id_ex_ALU_OP),
+        .funct3(id_ex_funct3),
+        .funct7(id_ex_funct7),
         .alu_op(alu_op),
         .is_mul_div(is_mul_div),
         .md_op(md_op)
     );
 
-    wire [XLEN-1:0] alu_input_b;
     wire [XLEN-1:0] alu_input_a;
+    wire [XLEN-1:0] alu_input_b;
     wire zero_flag, carry_out, negative, overflow;
-
-    assign start = is_mul_div;
+    wire [XLEN-1:0] alu_result;
+    wire [31:0] mul_div_result;
+    wire busy;
 
     mul_div md(
         .clk(clk),
@@ -183,35 +330,22 @@ module rv32im_pipelined #(
         .done(done)
     );
 
-    // ---------------------------------------------------------
-    // MULTI-CYCLE MUX: ALUSrcA
-    // ---------------------------------------------------------
-    // We define a 2-bit control signal (will eventually be generated by the FSM).
-    // 2'b00 -> PC (For Fetching, Jumps, Branches)
-    // 2'b01 -> A Register (For Arithmetic, Memory Addresses)
-    // 2'b10 -> 0 (For LUI instruction)
+    // Dedicated target adder for branch and jump offset calculation
+    wire [31:0] target_address = id_ex_pc + id_ex_imm;
 
+    // ALU input multiplexers pulling from ID/EX pipeline stage registers
     assign alu_input_a =
-            (ALUSrcA_ctrl == 2'b00) ? PC :
-            (ALUSrcA_ctrl == 2'b01) ? A :
-            (ALUSrcA_ctrl == 2'b10) ? 32'b0 :
-            A;
-
-    // ---------------------------------------------------------
-    // MULTI-CYCLE MUX: ALUSrcB
-    // ---------------------------------------------------------
-    // We define a 2-bit control signal (will eventually be generated by the FSM).
-    // 2'b00 -> B Register (For R-Type instructions)
-    // 2'b01 -> Constant 4 (For PC + 4 during Fetch stage)
-    // 2'b10 -> Immediate (For I-Type, S-Type, Jumps, and Branches)
+            (id_ex_ALUSrcA_ctrl == 2'b00) ? id_ex_pc :
+            (id_ex_ALUSrcA_ctrl == 2'b01) ? forwarded_read_data1 :
+            (id_ex_ALUSrcA_ctrl == 2'b10) ? 32'b0 :
+            forwarded_read_data1;
 
     assign alu_input_b =
-            (ALUSrcB_ctrl == 2'b00) ? B :
-            (ALUSrcB_ctrl == 2'b01) ? 32'd4 :
-            (ALUSrcB_ctrl == 2'b10) ? imm_out :
-            32'b0;
+            (id_ex_ALUSrcB_ctrl == 2'b00) ? forwarded_read_data2 :
+            (id_ex_ALUSrcB_ctrl == 2'b01) ? 32'd4 :
+            (id_ex_ALUSrcB_ctrl == 2'b10) ? id_ex_imm :
+            forwarded_read_data2;
 
-    // The main mathematical brain. It computes addresses, arithmetic, and branch conditions!
     ALU_n_bit #(
         .WIDTH(32)
     ) alu (
@@ -226,62 +360,87 @@ module rv32im_pipelined #(
         .overflow(overflow)
     );
 
-    // =========================================================================
-    // 5. MEMORY ACCESS (MEM) & WRITE-BACK (WB)
-    // =========================================================================
-
-    // Memory module for Load/Store operations.
-    // E.g., [SW x8, 4(x2)] => Memory[x2 + 4] = x8
-    data_mem dm(
-        .clk(clk),
-        .MemRead(MemRead),
-        .MemWrite(MemWrite),
-        .write_data(B),         // Use latched B register instead of combinational read_data2
-        .addr(ALUOut),          // Address comes from ALU calculation in previous cycle
-        .read_data(mem_data)
-    );
-
-    // Write-Back MUX: Multi-Cycle Design
-    // We now write back from our saved State Registers instead of raw combinational outputs!
-    assign write_data = (MemToReg)? MDR : ALUOut;
-
-    // =========================================================================
-    // 6. PC UPDATE (BRANCHING & JUMPING LOGIC)
-    // =========================================================================
-    
+    // Evaluate branch conditions combinationaly in Execute stage
+    reg id_ex_branch_taken;
     always @(*) begin
-        // Evaluate the branch condition based on the ALU flags.
-        case(funct3)
-            3'b000 : branch_taken = zero_flag;                      // BEQ
-            3'b001 : branch_taken = ~zero_flag;                     // BNE
-            3'b100 : branch_taken = negative ^ overflow;            // BLT  (Signed)
-            3'b101 : branch_taken = ~(negative ^ overflow);         // BGE  (Signed)
-            3'b110 : branch_taken = ~carry_out;                     // BLTU (Unsigned)
-            3'b111 : branch_taken = carry_out;                      // BGEU (Unsigned)
-            default: branch_taken = 0;
+        case(id_ex_funct3)
+            3'b000 : id_ex_branch_taken = zero_flag;                      // BEQ
+            3'b001 : id_ex_branch_taken = ~zero_flag;                     // BNE
+            3'b100 : id_ex_branch_taken = negative ^ overflow;            // BLT  (Signed)
+            3'b101 : id_ex_branch_taken = ~(negative ^ overflow);         // BGE  (Signed)
+            3'b110 : id_ex_branch_taken = ~carry_out;                     // BLTU (Unsigned)
+            3'b111 : id_ex_branch_taken = carry_out;                      // BGEU (Unsigned)
+            default: id_ex_branch_taken = 0;
         endcase
     end
 
-    // ---------------------------------------------------------
-    // MULTI-CYCLE MUX: PCSource
-    // ---------------------------------------------------------
-    // The dedicated adders for PC+4 and Branches are gone! The ALU does it all.
-    // 2'b00 -> alu_result (Used during Fetch to write PC+4 directly from the ALU)
-    // 2'b01 -> ALUOut (Used for Jumps/Branches to write target calculated in previous cycle)
-    // 2'b10 -> alu_result with LSB set to 0 (Specifically for JALR)
+    // Next PC Selection is determined immediately by branch resolution in the EX stage
+    assign take_branch_or_jump = (id_ex_Branch & id_ex_branch_taken) | id_ex_Jump;
+    assign PC_next = (take_branch_or_jump) ? target_address : PC_plus_4;
 
-    assign PC_next =
-            (PCSource_ctrl == 2'b00) ? alu_result :
-            (PCSource_ctrl == 2'b01) ? ALUOut :
-            (PCSource_ctrl == 2'b10) ? (alu_result & 32'hFFFFFFFE) : // JALR masking
-            alu_result;
+    // Output of the stage is either the ALU calculation or the Multiplier result
+    wire [XLEN-1:0] ex_stage_result = (is_mul_div) ? mul_div_result : alu_result;
 
-    // Update the PC sequentially on every clock edge, ONLY if PCWrite is enabled by FSM.
+    // EX/MEM Pipeline Register sequential update
     always @(posedge clk) begin
-        if(!rst_n)
-            PC <= 0;
-        else if (PCWrite)
-            PC <= PC_next;
+        if(!rst_n) begin
+            ex_mem_alu_result       <= 0;
+            ex_mem_write_data       <= 0;
+            ex_mem_rd               <= 0;
+            ex_mem_MemRead          <= 0;
+            ex_mem_MemWrite         <= 0;
+            ex_mem_MemToReg         <= 0;
+            ex_mem_RegWrite         <= 0;
+        end else if (stall) begin
+            // Bubble injection on stall: deactivate side-effects (writes)
+            ex_mem_MemRead          <= 0;
+            ex_mem_MemWrite         <= 0;
+            ex_mem_RegWrite         <= 0;
+        end else begin
+            ex_mem_alu_result       <= ex_stage_result;
+            ex_mem_write_data       <= forwarded_read_data2;
+            ex_mem_rd               <= id_ex_rd;
+            ex_mem_MemRead          <= id_ex_MemRead;
+            ex_mem_MemWrite         <= id_ex_MemWrite;
+            ex_mem_MemToReg         <= id_ex_MemToReg;
+            ex_mem_RegWrite         <= id_ex_RegWrite;
+        end
     end
+
+    // =========================================================================
+    // 4. MEMORY ACCESS (MEM) STAGE
+    // =========================================================================
+    wire [XLEN-1:0] mem_data;
+
+    data_mem dm(
+        .clk(clk),
+        .MemRead(ex_mem_MemRead),
+        .MemWrite(ex_mem_MemWrite),
+        .write_data(ex_mem_write_data),
+        .addr(ex_mem_alu_result),
+        .read_data(mem_data)
+    );
+
+    // MEM/WB Pipeline Register sequential update
+    always @(posedge clk) begin
+        if(!rst_n) begin
+            mem_wb_read_data    <= 0;
+            mem_wb_alu_result   <= 0;
+            mem_wb_rd           <= 0;
+            mem_wb_MemToReg     <= 0;
+            mem_wb_RegWrite     <= 0;
+        end else begin
+            mem_wb_read_data    <= mem_data;
+            mem_wb_alu_result   <= ex_mem_alu_result;
+            mem_wb_rd           <= ex_mem_rd;
+            mem_wb_MemToReg     <= ex_mem_MemToReg;
+            mem_wb_RegWrite     <= ex_mem_RegWrite;
+        end
+    end
+
+    // =========================================================================
+    // 5. WRITE-BACK (WB) STAGE
+    // =========================================================================
+    assign wb_write_data = (mem_wb_MemToReg) ? mem_wb_read_data : mem_wb_alu_result;
 
 endmodule
