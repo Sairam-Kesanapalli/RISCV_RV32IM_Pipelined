@@ -45,7 +45,7 @@ OUT_CTRL    = control_sim
 OUT_REG     = register_sim
 OUT_IMM_GEN = imm_gen_sim
 
-.PHONY: all compile sim clean debug svt svt_golden wave wave-svt alu_test wave-alu mul_div_test wave-mul_div control_test wave-control_unit register_test wave-register imm_gen_test wave-imm_gen
+.PHONY: all compile sim clean debug svt svt_golden wave wave-svt alu_test wave-alu mul_div_test wave-mul_div control_test wave-control_unit register_test wave-register imm_gen_test wave-imm_gen unit_tests
 
 all: compile sim
 
@@ -71,8 +71,71 @@ svt: svt_golden
 	$(CC) $(CFLAGS) -o $(OUT_SVT) tb/svt_tb.v $(SOURCES)
 	$(SIM) $(OUT_SVT)
 
+# Compile and run all module unit tests in one command with neat formatting and fail-fast return code
+unit_tests:
+	@echo "======================================================="
+	@echo "             RUNNING MODULE UNIT TESTS                 "
+	@echo "======================================================="
+	@failed=0; \
+	\
+	echo "Running ALU unit test..."; \
+	$(CC) $(CFLAGS) -o $(OUT_ALU) $(TB_ALU) src/alu/ALU_n_bit.v src/alu/full_adder_n_bit.v && $(SIM) $(OUT_ALU) > alu_test.log 2>&1; \
+	if [ $$? -eq 0 ] && ! grep -q "\[FAIL\]" alu_test.log; then \
+		echo "ALU [PASS]"; \
+	else \
+		echo "ALU [FAIL]"; \
+		failed=1; \
+	fi; \
+	\
+	echo "Running MUL/DIV unit test..."; \
+	$(CC) $(CFLAGS) -o $(OUT_MUL_DIV) $(TB_MUL_DIV) src/alu/mul_div.v && $(SIM) $(OUT_MUL_DIV) > mul_div_test.log 2>&1; \
+	if [ $$? -eq 0 ] && ! grep -q "\[FAIL\]" mul_div_test.log; then \
+		echo "MUL/DIV [PASS]"; \
+	else \
+		echo "MUL/DIV [FAIL]"; \
+		failed=1; \
+	fi; \
+	\
+	echo "Running Control Unit unit test..."; \
+	$(CC) $(CFLAGS) -o $(OUT_CTRL) $(TB_CTRL) src/core/control_unit.v && $(SIM) $(OUT_CTRL) > control_test.log 2>&1; \
+	if [ $$? -eq 0 ] && ! grep -q "\[FAIL\]" control_test.log; then \
+		echo "control unit [PASS]"; \
+	else \
+		echo "control unit [FAIL]"; \
+		failed=1; \
+	fi; \
+	\
+	echo "Running Register File unit test..."; \
+	$(CC) $(CFLAGS) -o $(OUT_REG) $(TB_REG) src/core/register.v && $(SIM) $(OUT_REG) > register_test.log 2>&1; \
+	if [ $$? -eq 0 ] && ! grep -q "\[FAIL\]" register_test.log; then \
+		echo "register file [PASS]"; \
+	else \
+		echo "register file [FAIL]"; \
+		failed=1; \
+	fi; \
+	\
+	echo "Running Immediate Generator unit test..."; \
+	$(CC) $(CFLAGS) -o $(OUT_IMM_GEN) $(TB_IMM_GEN) src/core/imm_gen.v && $(SIM) $(OUT_IMM_GEN) > imm_gen_test.log 2>&1; \
+	if [ $$? -eq 0 ] && ! grep -q "\[FAIL\]" imm_gen_test.log; then \
+		echo "immediate generator [PASS]"; \
+	else \
+		echo "immediate generator [FAIL]"; \
+		failed=1; \
+	fi; \
+	\
+	rm -f alu_test.log mul_div_test.log control_test.log register_test.log imm_gen_test.log; \
+	echo "======================================================="; \
+	if [ $$failed -eq 0 ]; then \
+		echo "          ALL MODULE UNIT TESTS PASSED                 "; \
+		echo "======================================================="; \
+	else \
+		echo "         SOME MODULE UNIT TESTS FAILED                 "; \
+		echo "======================================================="; \
+		exit 1; \
+	fi
+
 # Regression Framework
-regression:
+regression: unit_tests
 	@echo "======================================================="
 	@echo "              RUNNING REGRESSION SUITE                 "
 	@echo "======================================================="
