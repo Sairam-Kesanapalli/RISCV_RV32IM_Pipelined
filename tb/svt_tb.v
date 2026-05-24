@@ -89,6 +89,48 @@ module svt_tb;
         end
         $display("=======================================================\n");
 
+        // =========================================================================
+        // PERFORMANCE COUNTER ANALYSIS REPORT
+        // =========================================================================
+        begin : print_performance_report
+            real overall_cpi;
+            real branch_taken_rate;
+            real stall_rate;
+            real flush_rate;
+            
+            overall_cpi       = (rv.total_instr > 0) ? ($itor(rv.total_cycles) / $itor(rv.total_instr)) : 0.0;
+            branch_taken_rate = (rv.cnt_branch > 0)  ? ($itor(rv.cnt_branch_taken) * 100.0 / $itor(rv.cnt_branch)) : 0.0;
+            stall_rate        = ($itor(rv.cnt_load_use_stalls + rv.cnt_mul_div_stalls) * 100.0 / $itor(rv.total_cycles));
+            flush_rate        = ($itor(rv.cnt_flush_cycles) * 100.0 / $itor(rv.total_cycles));
+
+            $display("\n=======================================================");
+            $display("             PROCESSOR PERFORMANCE REPORT              ");
+            $display("=======================================================");
+            $display("  [Core Metrics]");
+            $display("    Total Clock Cycles       : %0d", rv.total_cycles);
+            $display("    Instructions Retired     : %0d", rv.total_instr);
+            $display("    Overall CPI              : %0.3f (Ideal = 1.000)", overall_cpi);
+            $display("");
+            $display("  [Instruction Mix]");
+            $display("    ALU Instructions         : %0d (%0.2f%%)", rv.cnt_alu,     (rv.total_instr > 0) ? ($itor(rv.cnt_alu) * 100.0 / $itor(rv.total_instr)) : 0.0);
+            $display("    Mul/Div Instructions     : %0d (%0.2f%%)", rv.cnt_mul_div, (rv.total_instr > 0) ? ($itor(rv.cnt_mul_div) * 100.0 / $itor(rv.total_instr)) : 0.0);
+            $display("    Load Instructions        : %0d (%0.2f%%)", rv.cnt_load,    (rv.total_instr > 0) ? ($itor(rv.cnt_load) * 100.0 / $itor(rv.total_instr)) : 0.0);
+            $display("    Store Instructions       : %0d (%0.2f%%)", rv.cnt_store,   (rv.total_instr > 0) ? ($itor(rv.cnt_store) * 100.0 / $itor(rv.total_instr)) : 0.0);
+            $display("    Branch Instructions      : %0d (%0.2f%%)", rv.cnt_branch,  (rv.total_instr > 0) ? ($itor(rv.cnt_branch) * 100.0 / $itor(rv.total_instr)) : 0.0);
+            $display("    Jump Instructions        : %0d (%0.2f%%)", rv.cnt_jump,    (rv.total_instr > 0) ? ($itor(rv.cnt_jump) * 100.0 / $itor(rv.total_instr)) : 0.0);
+            $display("");
+            $display("  [Branch Predictor Metrics (Static Not-Taken)]");
+            $display("    Branches Taken (Mispred) : %0d (%0.2f%%)", rv.cnt_branch_taken, branch_taken_rate);
+            $display("    Branches Not-Taken (Pred): %0d (%0.2f%%)", rv.cnt_branch_not_taken, 100.0 - branch_taken_rate);
+            $display("");
+            $display("  [Pipeline Stall & Overhead Analysis]");
+            $display("    Load-Use Stall Cycles    : %0d (%0.2f%% of cycles)", rv.cnt_load_use_stalls, $itor(rv.cnt_load_use_stalls) * 100.0 / $itor(rv.total_cycles));
+            $display("    Multiplier Stall Cycles  : %0d (%0.2f%% of cycles)", rv.cnt_mul_div_stalls,  $itor(rv.cnt_mul_div_stalls) * 100.0 / $itor(rv.total_cycles));
+            $display("    Control Hazard Flushes   : %0d (%0.2f%% of cycles)", rv.cnt_flush_cycles,     $itor(rv.cnt_flush_cycles) * 100.0 / $itor(rv.total_cycles));
+            $display("    Total Wasted Cycles      : %0d (%0.2f%% overhead)",  (rv.cnt_load_use_stalls + rv.cnt_mul_div_stalls + rv.cnt_flush_cycles), stall_rate + flush_rate);
+            $display("=======================================================\n");
+        end
+
         $finish;
     end
 endmodule
