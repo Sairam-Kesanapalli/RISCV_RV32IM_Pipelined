@@ -214,8 +214,8 @@ module mul_div #(
                 // After 32 iterations, accumulator holds the 64-bit product.
                 S_MUL_ITER: begin
                     if (mplier[0])
-                        accumulator <= ({accumulator[WIDTH*2-1:WIDTH] + mcand,
-                                         accumulator[WIDTH-1:0]}) >> 1;
+                        accumulator <= ({ {1'b0, accumulator[WIDTH*2-1:WIDTH]} + mcand,
+                                         accumulator[WIDTH-1:0] }) >> 1;
                     else
                         accumulator <= accumulator >> 1;
 
