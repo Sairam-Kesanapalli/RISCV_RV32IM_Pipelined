@@ -27,15 +27,25 @@ SOURCES = $(SRC_CORE)/rv32im_pipelined.v \
           $(SRC_MEM)/data_mem.v
 
 # Testbenches
-TB_MAIN = $(TB_DIR)/rv32im_tb.v
-TB_DEBUG = $(TB_DIR)/test_lw_sw.v
+TB_MAIN 	= $(TB_DIR)/rv32im_tb.v
+TB_DEBUG 	= $(TB_DIR)/test_lw_sw.v
+TB_ALU 		= src/alu/tb/ALU_n_bit_tb.v
+TB_MUL_DIV  = src/alu/tb/mul_div_tb.v
+TB_CTRL     = src/core/tb/control_unit_tb.v
+TB_REG      = src/core/tb/register_tb.v
+TB_IMM_GEN  = src/core/tb/imm_gen_tb.v
 
 # Output binaries
-OUT_MAIN = rv32im_sim
-OUT_DEBUG = debug_sim
-OUT_SVT = svt_sim
+OUT_MAIN 	= rv32im_sim
+OUT_DEBUG 	= debug_sim
+OUT_SVT 	= svt_sim
+OUT_ALU 	= alu_sim
+OUT_MUL_DIV = mul_div_sim
+OUT_CTRL    = control_sim
+OUT_REG     = register_sim
+OUT_IMM_GEN = imm_gen_sim
 
-.PHONY: all compile sim clean debug svt svt_golden wave wave-svt
+.PHONY: all compile sim clean debug svt svt_golden wave wave-svt alu_test wave-alu mul_div_test wave-mul_div control_test wave-control_unit register_test wave-register imm_gen_test wave-imm_gen
 
 all: compile sim
 
@@ -90,7 +100,53 @@ wave:
 wave-svt:
 	gtkwave SVT_verification.vcd &
 
+# Compile and run ALU testbench
+alu_test:
+	$(CC) $(CFLAGS) -o $(OUT_ALU) $(TB_ALU) src/alu/ALU_n_bit.v src/alu/full_adder_n_bit.v
+	$(SIM) $(OUT_ALU)
+
+# Open ALU GTKWave waveform
+wave-alu:
+	gtkwave wave.vcd &
+
+# Compile and run MUL_DIV testbench
+mul_div_test:
+	$(CC) $(CFLAGS) -o $(OUT_MUL_DIV) $(TB_MUL_DIV) src/alu/mul_div.v 
+	$(SIM) $(OUT_MUL_DIV)
+
+# Open MUL_DIV GTKWave waveform
+wave-mul_div:
+	gtkwave mul_div.vcd &
+
+# Compile and run Control Unit testbench
+control_test:
+	$(CC) $(CFLAGS) -o $(OUT_CTRL) $(TB_CTRL) src/core/control_unit.v
+	$(SIM) $(OUT_CTRL)
+
+# Open CONTROL_UNIT GTKWave waveform
+wave-control_unit:
+	gtkwave control_unit.vcd &
+
+# Compile and run Register File testbench
+register_test:
+	$(CC) $(CFLAGS) -o $(OUT_REG) $(TB_REG) src/core/register.v
+	$(SIM) $(OUT_REG)
+
+# Open REGISTER GTKWave waveform
+wave-register:
+	gtkwave register.vcd &
+
+# Compile and run Immediate Generator testbench
+imm_gen_test:
+	$(CC) $(CFLAGS) -o $(OUT_IMM_GEN) $(TB_IMM_GEN) src/core/imm_gen.v
+	$(SIM) $(OUT_IMM_GEN)
+
+# Open Immediate Generator GTKWave waveform
+wave-imm_gen:
+	gtkwave imm_gen.vcd &
+
 # Clean up generated files
 clean:
-	rm -f $(OUT_MAIN) $(OUT_DEBUG) $(OUT_SVT) golden_sim *.vcd tb/expected_*.hex regression_tests/*/expected_*.hex
+	rm -f $(OUT_MAIN) $(OUT_DEBUG) $(OUT_SVT) $(OUT_ALU) $(OUT_MUL_DIV) $(OUT_CTRL) $(OUT_REG) $(OUT_IMM_GEN) golden_sim *.vcd tb/expected_*.hex regression_tests/*/expected_*.hex
+
 
