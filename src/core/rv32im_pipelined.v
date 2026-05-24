@@ -63,6 +63,38 @@ module rv32im_pipelined #(
     reg            mem_wb_MemToReg;
     reg            mem_wb_RegWrite;
 
+    // IF/ID Stage Validity
+    reg            if_id_valid;
+
+    // ID/EX Stage Classification & Validity
+    reg            id_ex_is_alu;
+    reg            id_ex_is_mul_div;
+    reg            id_ex_is_load;
+    reg            id_ex_is_store;
+    reg            id_ex_is_branch;
+    reg            id_ex_is_jump;
+    reg            id_ex_valid;
+
+    // EX/MEM Stage Classification & Validity
+    reg            ex_mem_is_alu;
+    reg            ex_mem_is_mul_div;
+    reg            ex_mem_is_load;
+    reg            ex_mem_is_store;
+    reg            ex_mem_is_branch;
+    reg            ex_mem_is_jump;
+    reg            ex_mem_valid;
+    reg            ex_mem_branch_taken;
+
+    // MEM/WB Stage Classification & Validity
+    reg            mem_wb_is_alu;
+    reg            mem_wb_is_mul_div;
+    reg            mem_wb_is_load;
+    reg            mem_wb_is_store;
+    reg            mem_wb_is_branch;
+    reg            mem_wb_is_jump;
+    reg            mem_wb_valid;
+    reg            mem_wb_branch_taken;
+
     // =========================================================================
     // HAZARD DETECTION & FORWARDING UNIT
     // =========================================================================
@@ -152,12 +184,15 @@ module rv32im_pipelined #(
         if (!rst_n) begin
             if_id_pc    <= 0;
             if_id_instr <= 32'h00000013; // NOP (addi x0, x0, 0)
+            if_id_valid <= 1'b0;
         end else if (flush) begin
             if_id_pc    <= 0;
             if_id_instr <= 32'h00000013; // NOP (addi x0, x0, 0)
+            if_id_valid <= 1'b0;
         end else if (!pipeline_stall) begin
             if_id_pc    <= PC;
             if_id_instr <= mem_instr;
+            if_id_valid <= !halt;
         end
     end
 
@@ -170,6 +205,17 @@ module rv32im_pipelined #(
     assign rs1          = if_id_instr[19:15];     // Source register 1
     assign rs2          = if_id_instr[24:20];     // Source register 2
     wire [6:0] funct7   = if_id_instr[31:25];     // Secondary function identifier
+
+    // Instruction classification for performance counters
+    wire id_is_alu      = (opcode == 7'b0110011 && funct7 != 7'b0000001) || // R-Type
+                          (opcode == 7'b0010011) ||                         // I-Type
+                          (opcode == 7'b0110111) ||                         // LUI
+                          (opcode == 7'b0010111);                           // AUIPC
+    wire id_is_mul_div  = (opcode == 7'b0110011 && funct7 == 7'b0000001);   // M-Extension
+    wire id_is_load     = (opcode == 7'b0000011);                           // LW
+    wire id_is_store    = (opcode == 7'b0100011);                           // SW
+    wire id_is_branch   = (opcode == 7'b1100011);                           // B-Type
+    wire id_is_jump     = (opcode == 7'b1101111) || (opcode == 7'b1100111);   // JAL, JALR
 
     // Control Unit outputs
     wire [1:0] ALUSrcA_ctrl;
@@ -234,6 +280,13 @@ module rv32im_pipelined #(
             id_ex_MemToReg      <= 0;
             id_ex_Branch        <= 0;
             id_ex_Jump          <= 0;
+            id_ex_is_alu        <= 0;
+            id_ex_is_mul_div    <= 0;
+            id_ex_is_load       <= 0;
+            id_ex_is_store      <= 0;
+            id_ex_is_branch     <= 0;
+            id_ex_is_jump       <= 0;
+            id_ex_valid         <= 0;
         end else if (flush) begin
             id_ex_pc            <= 0;
             id_ex_read_data1    <= 0;
@@ -253,6 +306,13 @@ module rv32im_pipelined #(
             id_ex_MemToReg      <= 0;
             id_ex_Branch        <= 0;
             id_ex_Jump          <= 0;
+            id_ex_is_alu        <= 0;
+            id_ex_is_mul_div    <= 0;
+            id_ex_is_load       <= 0;
+            id_ex_is_store      <= 0;
+            id_ex_is_branch     <= 0;
+            id_ex_is_jump       <= 0;
+            id_ex_valid         <= 0;
         end else if (stall) begin
             // Multiplier stall: hold state stable
         end else if (load_use_stall) begin
@@ -275,6 +335,13 @@ module rv32im_pipelined #(
             id_ex_MemToReg      <= 0;
             id_ex_Branch        <= 0;
             id_ex_Jump          <= 0;
+            id_ex_is_alu        <= 0;
+            id_ex_is_mul_div    <= 0;
+            id_ex_is_load       <= 0;
+            id_ex_is_store      <= 0;
+            id_ex_is_branch     <= 0;
+            id_ex_is_jump       <= 0;
+            id_ex_valid         <= 0;
         end else begin
             id_ex_pc            <= if_id_pc;
             id_ex_read_data1    <= read_data1;
@@ -294,6 +361,13 @@ module rv32im_pipelined #(
             id_ex_MemToReg      <= MemToReg;
             id_ex_Branch        <= Branch;
             id_ex_Jump          <= Jump;
+            id_ex_is_alu        <= id_is_alu;
+            id_ex_is_mul_div    <= id_is_mul_div;
+            id_ex_is_load       <= id_is_load;
+            id_ex_is_store      <= id_is_store;
+            id_ex_is_branch     <= id_is_branch;
+            id_ex_is_jump       <= id_is_jump;
+            id_ex_valid         <= if_id_valid;
         end
     end
 
@@ -391,11 +465,27 @@ module rv32im_pipelined #(
             ex_mem_MemWrite         <= 0;
             ex_mem_MemToReg         <= 0;
             ex_mem_RegWrite         <= 0;
+            ex_mem_is_alu           <= 0;
+            ex_mem_is_mul_div       <= 0;
+            ex_mem_is_load          <= 0;
+            ex_mem_is_store         <= 0;
+            ex_mem_is_branch        <= 0;
+            ex_mem_is_jump          <= 0;
+            ex_mem_valid            <= 0;
+            ex_mem_branch_taken     <= 0;
         end else if (stall) begin
             // Bubble injection on stall: deactivate side-effects (writes)
             ex_mem_MemRead          <= 0;
             ex_mem_MemWrite         <= 0;
             ex_mem_RegWrite         <= 0;
+            ex_mem_is_alu           <= 0;
+            ex_mem_is_mul_div       <= 0;
+            ex_mem_is_load          <= 0;
+            ex_mem_is_store         <= 0;
+            ex_mem_is_branch        <= 0;
+            ex_mem_is_jump          <= 0;
+            ex_mem_valid            <= 0;
+            ex_mem_branch_taken     <= 0;
         end else begin
             ex_mem_alu_result       <= ex_stage_result;
             ex_mem_write_data       <= forwarded_read_data2;
@@ -404,6 +494,14 @@ module rv32im_pipelined #(
             ex_mem_MemWrite         <= id_ex_MemWrite;
             ex_mem_MemToReg         <= id_ex_MemToReg;
             ex_mem_RegWrite         <= id_ex_RegWrite;
+            ex_mem_is_alu           <= id_ex_is_alu;
+            ex_mem_is_mul_div       <= id_ex_is_mul_div;
+            ex_mem_is_load          <= id_ex_is_load;
+            ex_mem_is_store         <= id_ex_is_store;
+            ex_mem_is_branch        <= id_ex_is_branch;
+            ex_mem_is_jump          <= id_ex_is_jump;
+            ex_mem_valid            <= id_ex_valid;
+            ex_mem_branch_taken     <= id_ex_Branch & id_ex_branch_taken;
         end
     end
 
@@ -429,12 +527,28 @@ module rv32im_pipelined #(
             mem_wb_rd           <= 0;
             mem_wb_MemToReg     <= 0;
             mem_wb_RegWrite     <= 0;
+            mem_wb_is_alu       <= 0;
+            mem_wb_is_mul_div   <= 0;
+            mem_wb_is_load      <= 0;
+            mem_wb_is_store     <= 0;
+            mem_wb_is_branch    <= 0;
+            mem_wb_is_jump      <= 0;
+            mem_wb_valid        <= 0;
+            mem_wb_branch_taken <= 0;
         end else begin
             mem_wb_read_data    <= mem_data;
             mem_wb_alu_result   <= ex_mem_alu_result;
             mem_wb_rd           <= ex_mem_rd;
             mem_wb_MemToReg     <= ex_mem_MemToReg;
             mem_wb_RegWrite     <= ex_mem_RegWrite;
+            mem_wb_is_alu       <= ex_mem_is_alu;
+            mem_wb_is_mul_div   <= ex_mem_is_mul_div;
+            mem_wb_is_load      <= ex_mem_is_load;
+            mem_wb_is_store     <= ex_mem_is_store;
+            mem_wb_is_branch    <= ex_mem_is_branch;
+            mem_wb_is_jump      <= ex_mem_is_jump;
+            mem_wb_valid        <= ex_mem_valid;
+            mem_wb_branch_taken <= ex_mem_branch_taken;
         end
     end
 
@@ -442,5 +556,76 @@ module rv32im_pipelined #(
     // 5. WRITE-BACK (WB) STAGE
     // =========================================================================
     assign wb_write_data = (mem_wb_MemToReg) ? mem_wb_read_data : mem_wb_alu_result;
+
+    // =========================================================================
+    // PERFORMANCE COUNTER ACCUMULATION BLOCKS
+    // =========================================================================
+    reg [63:0] total_cycles;
+    reg [63:0] total_instr;
+    
+    // Instruction type counters
+    reg [63:0] cnt_alu;
+    reg [63:0] cnt_mul_div;
+    reg [63:0] cnt_load;
+    reg [63:0] cnt_store;
+    reg [63:0] cnt_branch;
+    reg [63:0] cnt_jump;
+    
+    // Branch execution metrics
+    reg [63:0] cnt_branch_taken;
+    reg [63:0] cnt_branch_not_taken;
+
+    // Hazard overhead counters
+    reg [63:0] cnt_load_use_stalls;
+    reg [63:0] cnt_mul_div_stalls;
+    reg [63:0] cnt_flush_cycles;
+
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            total_cycles         <= 64'd0;
+            total_instr          <= 64'd0;
+            cnt_alu              <= 64'd0;
+            cnt_mul_div          <= 64'd0;
+            cnt_load             <= 64'd0;
+            cnt_store            <= 64'd0;
+            cnt_branch           <= 64'd0;
+            cnt_jump             <= 64'd0;
+            cnt_branch_taken     <= 64'd0;
+            cnt_branch_not_taken <= 64'd0;
+            cnt_load_use_stalls  <= 64'd0;
+            cnt_mul_div_stalls   <= 64'd0;
+            cnt_flush_cycles     <= 64'd0;
+        end else begin
+            // 1. Clock cycle counting
+            total_cycles <= total_cycles + 1;
+
+            // 2. Instruction Retirement Counting at WB stage
+            if (mem_wb_valid) begin
+                total_instr <= total_instr + 1;
+                
+                if (mem_wb_is_alu)     cnt_alu     <= cnt_alu + 1;
+                if (mem_wb_is_mul_div) cnt_mul_div <= cnt_mul_div + 1;
+                if (mem_wb_is_load)    cnt_load    <= cnt_load + 1;
+                if (mem_wb_is_store)   cnt_store   <= cnt_store + 1;
+                if (mem_wb_is_jump)    cnt_jump    <= cnt_jump + 1;
+                
+                if (mem_wb_is_branch) begin
+                    cnt_branch <= cnt_branch + 1;
+                    if (mem_wb_branch_taken)
+                        cnt_branch_taken <= cnt_branch_taken + 1;
+                    else
+                        cnt_branch_not_taken <= cnt_branch_not_taken + 1;
+                end
+            end
+
+            // 3. Hazard and overhead monitoring
+            if (load_use_stall)
+                cnt_load_use_stalls <= cnt_load_use_stalls + 1;
+            if (stall) // Multiplier iterative busy stall
+                cnt_mul_div_stalls <= cnt_mul_div_stalls + 1;
+            if (flush) // Control hazard flush
+                cnt_flush_cycles <= cnt_flush_cycles + 1;
+        end
+    end
 
 endmodule
