@@ -6,7 +6,8 @@
  * and Write-Back (WB).
  *********************************************************************************/
 module rv32im_pipelined #(
-    parameter XLEN = 32
+    parameter XLEN = 32,
+    parameter INIT_FILE = ""
 )(
     input clk,
     input rst_n
@@ -22,6 +23,7 @@ module rv32im_pipelined #(
     wire [6:0] opcode;
     wire [4:0] rs1;
     wire [4:0] rs2;
+
 
     // IF/ID Pipeline Register
     reg [XLEN-1:0] if_id_pc;
@@ -51,6 +53,8 @@ module rv32im_pipelined #(
     reg [XLEN-1:0] ex_mem_alu_result;
     reg [XLEN-1:0] ex_mem_write_data;
     reg [4:0]      ex_mem_rd;
+    reg [3:0]      ex_mem_byte_en;
+    reg [2:0]      ex_mem_funct3;
     reg            ex_mem_MemRead;
     reg            ex_mem_MemWrite;
     reg            ex_mem_MemToReg;
@@ -60,6 +64,7 @@ module rv32im_pipelined #(
     reg [XLEN-1:0] mem_wb_read_data;
     reg [XLEN-1:0] mem_wb_alu_result;
     reg [4:0]      mem_wb_rd;
+    reg [2:0]      mem_wb_funct3;
     reg            mem_wb_MemToReg;
     reg            mem_wb_RegWrite;
 
@@ -73,6 +78,7 @@ module rv32im_pipelined #(
     reg            id_ex_is_store;
     reg            id_ex_is_branch;
     reg            id_ex_is_jump;
+    reg            id_ex_is_jalr;
     reg            id_ex_valid;
 
     // EX/MEM Stage Classification & Validity
@@ -162,7 +168,9 @@ module rv32im_pipelined #(
     wire [XLEN-1:0] PC_plus_4 = PC + 4;
     wire [XLEN-1:0] mem_instr;
 
-    instruction_memory imem(
+    instruction_memory #(
+        .INIT_FILE(INIT_FILE)
+    ) imem (
         .addr(PC),
         .instr(mem_instr)
     );
@@ -216,6 +224,7 @@ module rv32im_pipelined #(
     wire id_is_store    = (opcode == 7'b0100011);                           // SW
     wire id_is_branch   = (opcode == 7'b1100011);                           // B-Type
     wire id_is_jump     = (opcode == 7'b1101111) || (opcode == 7'b1100111);   // JAL, JALR
+    wire id_is_jalr     = (opcode == 7'b1100111);                             // JALR only
 
     // Control Unit outputs
     wire [1:0] ALUSrcA_ctrl;
@@ -286,6 +295,7 @@ module rv32im_pipelined #(
             id_ex_is_store      <= 0;
             id_ex_is_branch     <= 0;
             id_ex_is_jump       <= 0;
+            id_ex_is_jalr       <= 0;
             id_ex_valid         <= 0;
         end else if (flush) begin
             id_ex_pc            <= 0;
@@ -312,6 +322,7 @@ module rv32im_pipelined #(
             id_ex_is_store      <= 0;
             id_ex_is_branch     <= 0;
             id_ex_is_jump       <= 0;
+            id_ex_is_jalr       <= 0;
             id_ex_valid         <= 0;
         end else if (stall) begin
             // Multiplier stall: hold state stable
@@ -341,6 +352,7 @@ module rv32im_pipelined #(
             id_ex_is_store      <= 0;
             id_ex_is_branch     <= 0;
             id_ex_is_jump       <= 0;
+            id_ex_is_jalr       <= 0;
             id_ex_valid         <= 0;
         end else begin
             id_ex_pc            <= if_id_pc;
@@ -367,6 +379,7 @@ module rv32im_pipelined #(
             id_ex_is_store      <= id_is_store;
             id_ex_is_branch     <= id_is_branch;
             id_ex_is_jump       <= id_is_jump;
+            id_ex_is_jalr       <= id_is_jalr;
             id_ex_valid         <= if_id_valid;
         end
     end
@@ -405,7 +418,8 @@ module rv32im_pipelined #(
     );
 
     // Dedicated target adder for branch and jump offset calculation
-    wire [31:0] target_address = id_ex_pc + id_ex_imm;
+    // JAL/BRANCH use PC + imm. JALR uses rs1 + imm (with LSB set to 0).
+    wire [31:0] target_address = (id_ex_is_jalr) ? ((forwarded_read_data1 + id_ex_imm) & 32'hFFFFFFFE) : (id_ex_pc + id_ex_imm);
 
     // ALU input multiplexers pulling from ID/EX pipeline stage registers
     assign alu_input_a =
@@ -455,6 +469,33 @@ module rv32im_pipelined #(
     // Output of the stage is either the ALU calculation or the Multiplier result
     wire [XLEN-1:0] ex_stage_result = (is_mul_div) ? mul_div_result : alu_result;
 
+    reg [3:0] byte_en;
+    reg [XLEN-1:0] aligned_write_data;
+
+    always @(*) begin
+        byte_en = 4'b0000;
+        aligned_write_data = forwarded_read_data2;
+        if (id_ex_is_store) begin
+            case(id_ex_funct3)
+                3'b000: begin // SB
+                    byte_en = 4'b0001 << alu_result[1:0];
+                    aligned_write_data = {4{forwarded_read_data2[7:0]}};
+                end
+                3'b001: begin // SH
+                    byte_en = 4'b0011 << {alu_result[1], 1'b0};
+                    aligned_write_data = {2{forwarded_read_data2[15:0]}};
+                end
+                3'b010: begin // SW
+                    byte_en = 4'b1111;
+                    aligned_write_data = forwarded_read_data2;
+                end
+                default: byte_en = 4'b0000;
+            endcase
+        end else if (id_ex_is_load) begin
+            byte_en = 4'b0000;
+        end
+    end
+
     // EX/MEM Pipeline Register sequential update
     always @(posedge clk) begin
         if(!rst_n) begin
@@ -473,6 +514,8 @@ module rv32im_pipelined #(
             ex_mem_is_jump          <= 0;
             ex_mem_valid            <= 0;
             ex_mem_branch_taken     <= 0;
+            ex_mem_funct3           <= 0;
+            ex_mem_byte_en          <= 0;
         end else if (stall) begin
             // Bubble injection on stall: deactivate side-effects (writes)
             ex_mem_MemRead          <= 0;
@@ -486,9 +529,11 @@ module rv32im_pipelined #(
             ex_mem_is_jump          <= 0;
             ex_mem_valid            <= 0;
             ex_mem_branch_taken     <= 0;
+            ex_mem_funct3           <= 0;
+            ex_mem_byte_en          <= 0;
         end else begin
             ex_mem_alu_result       <= ex_stage_result;
-            ex_mem_write_data       <= forwarded_read_data2;
+            ex_mem_write_data       <= aligned_write_data;
             ex_mem_rd               <= id_ex_rd;
             ex_mem_MemRead          <= id_ex_MemRead;
             ex_mem_MemWrite         <= id_ex_MemWrite;
@@ -502,6 +547,8 @@ module rv32im_pipelined #(
             ex_mem_is_jump          <= id_ex_is_jump;
             ex_mem_valid            <= id_ex_valid;
             ex_mem_branch_taken     <= id_ex_Branch & id_ex_branch_taken;
+            ex_mem_funct3           <= id_ex_funct3;
+            ex_mem_byte_en          <= byte_en;
         end
     end
 
@@ -516,8 +563,48 @@ module rv32im_pipelined #(
         .MemWrite(ex_mem_MemWrite),
         .write_data(ex_mem_write_data),
         .addr(ex_mem_alu_result),
-        .read_data(mem_data)
+        .read_data(mem_data),
+        .byte_en(ex_mem_byte_en)
     );
+
+    reg [XLEN-1:0] aligned_read_data;
+    wire [1:0] byte_offset = ex_mem_alu_result[1:0];
+    always @(*) begin
+        aligned_read_data = mem_data;
+        if (ex_mem_is_load) begin
+            case(ex_mem_funct3)
+                3'b000: begin // LB
+                    case(byte_offset)
+                        2'b00: aligned_read_data = {{24{mem_data[7]}}, mem_data[7:0]};
+                        2'b01: aligned_read_data = {{24{mem_data[15]}}, mem_data[15:8]};
+                        2'b10: aligned_read_data = {{24{mem_data[23]}}, mem_data[23:16]};
+                        2'b11: aligned_read_data = {{24{mem_data[31]}}, mem_data[31:24]};
+                    endcase
+                end
+                3'b001: begin // LH
+                    case(byte_offset[1])
+                        1'b0: aligned_read_data = {{16{mem_data[15]}}, mem_data[15:0]};
+                        1'b1: aligned_read_data = {{16{mem_data[31]}}, mem_data[31:16]};
+                    endcase
+                end
+                3'b010: aligned_read_data = mem_data; // LW
+                3'b100: begin // LBU
+                    case(byte_offset)
+                        2'b00: aligned_read_data = {24'd0, mem_data[7:0]};
+                        2'b01: aligned_read_data = {24'd0, mem_data[15:8]};
+                        2'b10: aligned_read_data = {24'd0, mem_data[23:16]};
+                        2'b11: aligned_read_data = {24'd0, mem_data[31:24]};
+                    endcase
+                end
+                3'b101: begin // LHU
+                    case(byte_offset[1])
+                        1'b0: aligned_read_data = {16'd0, mem_data[15:0]};
+                        1'b1: aligned_read_data = {16'd0, mem_data[31:16]};
+                    endcase
+                end
+            endcase
+        end
+    end
 
     // MEM/WB Pipeline Register sequential update
     always @(posedge clk) begin
@@ -535,8 +622,9 @@ module rv32im_pipelined #(
             mem_wb_is_jump      <= 0;
             mem_wb_valid        <= 0;
             mem_wb_branch_taken <= 0;
+            mem_wb_funct3       <= 0;
         end else begin
-            mem_wb_read_data    <= mem_data;
+            mem_wb_read_data    <= aligned_read_data;
             mem_wb_alu_result   <= ex_mem_alu_result;
             mem_wb_rd           <= ex_mem_rd;
             mem_wb_MemToReg     <= ex_mem_MemToReg;
@@ -549,6 +637,7 @@ module rv32im_pipelined #(
             mem_wb_is_jump      <= ex_mem_is_jump;
             mem_wb_valid        <= ex_mem_valid;
             mem_wb_branch_taken <= ex_mem_branch_taken;
+            mem_wb_funct3       <= ex_mem_funct3;
         end
     end
 
