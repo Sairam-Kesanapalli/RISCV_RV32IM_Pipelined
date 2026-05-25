@@ -19,6 +19,9 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y iverilog python3
 
+    - name: Run Module-Level Unit Tests
+      run: make unit_tests
+
     - name: Run SVT sanity check
       run: make svt
 
