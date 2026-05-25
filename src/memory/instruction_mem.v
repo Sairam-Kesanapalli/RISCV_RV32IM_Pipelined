@@ -1,6 +1,7 @@
 module instruction_memory #(
     parameter XLEN = 32,
-    parameter DEPTH = 256
+    parameter DEPTH = 256,
+    parameter INIT_FILE = ""
 )(
     input [XLEN-1:0] addr,
     output [31:0] instr
@@ -64,12 +65,11 @@ module instruction_memory #(
                     instr_memory[i] = 32'hx;
                 end
                 $readmemh({test_dir, "/program.hex"}, instr_memory);
-            end else begin
-                // Load default Svt_custom_tests program
+            end else if (INIT_FILE != "") begin
                 for (i = 0; i < DEPTH; i = i + 1) begin
                     instr_memory[i] = 32'hx;
                 end
-                $readmemh("regression_tests/Svt_custom_tests/program.hex", instr_memory);
+                $readmemh(INIT_FILE, instr_memory);
             end
         end
     end

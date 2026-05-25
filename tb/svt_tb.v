@@ -5,7 +5,9 @@ module svt_tb;
     reg rst_n;
 
     // Processor Instantiation
-    rv32im_pipelined rv (
+    rv32im_pipelined #(
+        .INIT_FILE("regression_tests/Svt_custom_tests/program.hex")
+    ) rv (
         .clk(clk),
         .rst_n(rst_n)
     );
