@@ -7,6 +7,7 @@ module data_mem #(
         input MemWrite,
         input [XLEN-1:0] write_data,
         input [XLEN-1:0] addr,
+        input [3:0] byte_en,
         output reg [XLEN-1:0] read_data
     );
     // BITS FOR ADDRESSING
@@ -24,8 +25,12 @@ module data_mem #(
 
     // SYNCHRONOUS WRITE
     always @(posedge clk) begin
-        if(MemWrite)
-            memory[addr[ADDR_WIDTH+1:2]] <= write_data;
+        if(MemWrite) begin
+            if (byte_en[0]) memory[addr[ADDR_WIDTH+1:2]][7:0]   <= write_data[7:0];
+            if (byte_en[1]) memory[addr[ADDR_WIDTH+1:2]][15:8]  <= write_data[15:8];
+            if (byte_en[2]) memory[addr[ADDR_WIDTH+1:2]][23:16] <= write_data[23:16];
+            if (byte_en[3]) memory[addr[ADDR_WIDTH+1:2]][31:24] <= write_data[31:24];
+        end
     end
 
     // COMBINATIONAL READ
