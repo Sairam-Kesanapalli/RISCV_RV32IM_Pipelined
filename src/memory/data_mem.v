@@ -15,6 +15,13 @@ module data_mem #(
     // MEMORY DECLARATION
     reg [XLEN-1:0] memory [0:DEPTH-1];
 
+    // Zero-initialize data memory for simulation and ISA model alignment
+    initial begin
+        for (integer i = 0; i < DEPTH; i = i + 1) begin
+            memory[i] = {XLEN{1'b0}};
+        end
+    end
+
     // SYNCHRONOUS WRITE
     always @(posedge clk) begin
         if(MemWrite)
