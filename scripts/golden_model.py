@@ -250,7 +250,7 @@ def emit_hex(regs, mem, pc, out_dir="."):
         for i in range(16):
             val = mem[i]
             if val is None:
-                f.write("xxxxxxxx\n")  # Uninitialized — matches RTL 'x'
+                f.write("00000000\n")  # Zero-initialized
             else:
                 f.write(f"{val:08x}\n")
     with open(os.path.join(out_dir, "expected_pc.hex"), 'w') as f:
@@ -285,17 +285,13 @@ if __name__ == "__main__":
             sys.exit(1)
         instrs = parse_hex(imem_path)
     else:
-        # ---- Default `make svt` Flow ----
-        if os.path.exists("src/memory/instruction_mem.v"):
-            imem_path = "src/memory/instruction_mem.v"
-            out_dir = "tb"
-        elif os.path.exists("../src/memory/instruction_mem.v"):
-            imem_path = "../src/memory/instruction_mem.v"
-            out_dir = "../tb"
-        else:
-            print("Cannot find instruction_mem.v")
+        # ---- Default `make svt` Flow (Mapped to Svt_custom_tests) ----
+        imem_path = "regression_tests/Svt_custom_tests/program.hex"
+        out_dir = "regression_tests/Svt_custom_tests"
+        if not os.path.exists(imem_path):
+            print(f"Cannot find {imem_path}")
             sys.exit(1)
-        instrs = parse_imem(imem_path)
+        instrs = parse_hex(imem_path)
 
     regs, mem, pc = simulate(instrs)
     emit_hex(regs, mem, pc, out_dir)

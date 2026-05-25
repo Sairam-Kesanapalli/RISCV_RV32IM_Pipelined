@@ -29,7 +29,7 @@ module svt_tb;
         begin : load_expected
             reg [8191:0] test_dir; // 1024 bytes string
             if (!$value$plusargs("TEST_DIR=%s", test_dir)) begin
-                test_dir = "tb"; // Default for original `make svt`
+                test_dir = "regression_tests/Svt_custom_tests"; // Default custom tests directory
             end
             $readmemh({test_dir, "/expected_regs.hex"}, expected_regs);
             $readmemh({test_dir, "/expected_mem.hex"}, expected_mem);
