@@ -11,16 +11,17 @@ The hallmark of this repository is the complete hardware-realistic integration o
 1. **5-Stage Spatial Pipeline**: Overlaps instruction execution across five distinct stages: Fetch (IF), Decode (ID), Execute (EX), Memory (MEM), and Write-Back (WB) for maximum throughput.
 2. **Hazard Detection & Forwarding Unit**:
    - **Data Forwarding**: Resolves EX-to-EX and MEM-to-EX data hazards without stalling, routing intermediate results directly to the ALU inputs.
-   - **Load-Use Stall**: Detects load-use hazards and automatically inserts a 1-cycle pipeline bubble (stall).
+   - **Load-Use Stall**: Detects load-use hazards (for all base and sub-word loads) and automatically inserts a 1-cycle pipeline bubble (stall).
    - **Control Hazard Flush**: Flushes instructions in the IF and ID stages upon resolving taken branches or jumps in the EX stage, minimizing branch penalty.
 3. **Combinational Control Unit (`control_unit.v`)**: Generates all instruction control signals combinationaly during the Decode (ID) stage, which propagate downstream through sequential pipeline registers.
 4. **Iterative M-Extension (`mul_div.v`)**:
    - **Multiplication**: A hardware-realistic 32-cycle shift-and-add multiplier supporting `MUL`, `MULH`, `MULHSU`, and `MULHU`.
    - **Division / Remainder**: A hardware-realistic 32-cycle restoring divider supporting `DIV`, `DIVU`, `REM`, and `REMU`.
    - **Pipeline Stall**: Stalls the pipeline in the EX stage while the iterative multiplier/divider is active, resuming execution smoothly upon completion.
-5. **Co-Simulation SVT Framework**: Dynamic register and memory validation comparing the physical RTL simulation directly against an automated Python Instruction Set Simulator (ISS) golden model.
-6. **CI Regression Tests**: 7 different operation-specific categories running parallel test injections using runtime `$readmemh` parameter mapping (`+TEST_DIR`).
-7. **Continuous Integration**: GitHub Actions workflow (.github/workflows/makefile.yml) automatically compiles, verifies SVT, and runs regressions on all push and pull requests.
+5. **Full Sub-word Load/Store Support**: Integrates selective write byte-enables (`byte_en[3:0]`) for byte and halfword writes in `data_mem.v`, paired with dynamic processor-side alignment and sign/zero-extensions for sub-word reads (`LB`, `LBU`, `LH`, `LHU`, `SB`, `SH`).
+6. **Co-Simulation SVT Framework**: Dynamic register and memory validation comparing the physical RTL simulation directly against an automated Python Instruction Set Simulator (ISS) golden model.
+7. **CI Regression Tests**: 7 different operation-specific categories running parallel test injections using runtime `$readmemh` parameter mapping (`+TEST_DIR`).
+8. **Continuous Integration**: GitHub Actions workflow (.github/workflows/makefile.yml) automatically compiles, verifies SVT, and runs regressions on all push and pull requests.
 
 ---
 
@@ -129,9 +130,9 @@ graph LR
 ### RV32I Base Integer Instructions
 - **R-Type**: `ADD`, `SUB`, `AND`, `OR`, `XOR`, `SLL`, `SRL`, `SRA`, `SLT`, `SLTU`
 - **I-Type**: `ADDI`, `ANDI`, `ORI`, `XORI`, `SLLI`, `SRLI`, `SRAI`, `SLTI`, `SLTIU`
-- **Load/Store**: `LW`, `SW`
+- **Load/Store**: `LW`, `LH`, `LHU`, `LB`, `LBU`, `SW`, `SH`, `SB` (fully supporting byte-enable selective writes and dynamic sign/zero-extended sub-word loads)
 - **Branch**: `BEQ`, `BNE`, `BLT`, `BGE`, `BLTU`, `BGEU`
-- **Jumps**: `JAL`, `JALR`
+- **Jumps**: `JAL`, `JALR` (clears the LSB of the target address to 0 to ensure strict 32-bit instruction alignment)
 - **Upper Immediate**: `LUI`, `AUIPC`
 
 ### RV32M Extension Instructions
