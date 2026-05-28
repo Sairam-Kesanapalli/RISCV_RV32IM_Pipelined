@@ -30,75 +30,182 @@ The hallmark of this repository is the complete hardware-realistic integration o
 ### 5-Stage Pipeline Overview
 
 ```mermaid
-graph LR
-    %% ── Stages ────────────────────────────────────────────────────────────────
-    subgraph IF ["① IF — Instruction Fetch"]
-        direction TB
-        IMEM["Instruction\nMemory"]
-        PC["PC\nRegister"]
-        PC4["PC + 4\nAdder"]
-        PC -->|addr| IMEM
-        PC --> PC4
+%%{ init: { "theme": "base", "themeVariables": { "fontSize": "14px" } } }%%
+
+flowchart TB
+
+    %% ═══════════════════════════════════════════════════════════════════════════
+    %% STAGE 1: INSTRUCTION FETCH (IF)
+    %% ═══════════════════════════════════════════════════════════════════════════
+    subgraph IF_STAGE ["🟦 STAGE 1 — INSTRUCTION FETCH (IF)"]
+        direction LR
+        PCMUX{"🔀 PC Mux\n─────────\n0: PC+4\n1: Target Addr"}
+        PCREG["📌 PC Register\n(Sequential)"]
+        PCADD["➕ PC + 4\nAdder"]
+        IMEM[("💾 Instruction\nMemory\n(ROM + readmemh)")]
+        HALT{"🛑 Halt\nDetect\n(instr === x)"}
+
+        PCMUX --> PCREG
+        PCREG -->|"addr[31:0]"| IMEM
+        PCREG --> PCADD
+        IMEM --> HALT
     end
 
-    IFREG(["IF/ID\nReg"])
+    %% ── IF/ID Pipeline Register ─────────────────────────────────────────────
+    IF_ID_REG["IF/ID Pipeline Register\nif_id_pc · if_id_instr · if_id_valid"]
 
-    subgraph ID ["② ID — Instruction Decode"]
-        direction TB
-        CU["Control Unit\n(Combinational)"]
-        RF["Register File\n(32 × 32)"]
-        IG["Immediate\nGenerator"]
+    %% ═══════════════════════════════════════════════════════════════════════════
+    %% STAGE 2: INSTRUCTION DECODE (ID)
+    %% ═══════════════════════════════════════════════════════════════════════════
+    subgraph ID_STAGE ["🟩 STAGE 2 — INSTRUCTION DECODE (ID)"]
+        direction LR
+        DECODE["🔍 Instruction\nField Decoder\n─────────\nopcode · rd · funct3\nrs1 · rs2 · funct7"]
+        CU["⚙️ Control Unit\n(Combinational)\n─────────\nALUSrcA · ALUSrcB\nALU_OP · RegWrite\nMemRead · MemWrite\nMemToReg · Branch · Jump"]
+        RF["📋 Register File\n(32 × 32-bit)\n─────────\nRead: rs1 → read_data1\nRead: rs2 → read_data2\nWrite: wb ← WB stage"]
+        IMMGEN["🔢 Immediate\nGenerator\n─────────\nR / I / S / B\nU / J formats"]
+
+        DECODE --> CU
+        DECODE --> RF
+        DECODE --> IMMGEN
     end
 
-    IDREG(["ID/EX\nReg"])
+    %% ── ID/EX Pipeline Register ─────────────────────────────────────────────
+    ID_EX_REG["ID/EX Pipeline Register\nid_ex_pc · read_data1/2 · imm · rd · rs1 · rs2\nfunct3 · funct7 · ALU_OP · ALUSrcA/B · control signals"]
 
-    subgraph EX ["③ EX — Execute"]
+    %% ═══════════════════════════════════════════════════════════════════════════
+    %% STAGE 3: EXECUTE (EX)
+    %% ═══════════════════════════════════════════════════════════════════════════
+    subgraph EX_STAGE ["🟧 STAGE 3 — EXECUTE (EX)"]
         direction TB
-        MUXA["MUX A\nPC / rs1 / 0"]
-        MUXB["MUX B\nrs2 / imm / 4"]
-        ALU["ALU\n(32-bit)"]
-        MULDIV["MUL/DIV\n(32-cycle iter.)"]
-        BREVAL["Branch\nEvaluator"]
-        TADD["Target Adder\nPC + imm"]
-        RESULT["EX Result\nMux"]
-        HDU["Hazard Detection\n& Forwarding Unit"]
+
+        subgraph FWD_UNIT ["Forwarding Unit"]
+            direction LR
+            FWDA["forwardA\nMux Select\n(2-bit)"]
+            FWDB["forwardB\nMux Select\n(2-bit)"]
+        end
+
+        subgraph EX_DATAPATH ["Execution Datapath"]
+            direction TB
+            MUXA{"🔀 MUX A\n─────────\n00: PC\n01: rs1 (fwd)\n10: zero"}
+            MUXB{"🔀 MUX B\n─────────\n00: rs2 (fwd)\n01: 4\n10: imm"}
+            ALU_CTRL["ALU Control\n─────────\nalu_op[3:0]\nis_mul_div\nmd_op[2:0]"]
+            ALU["⚡ ALU\n(32-bit)\n─────────\nadd · sub · and\nor · xor · sll\nsrl · sra · slt"]
+            MD["✖️ MUL / DIV\n(32-cycle Iterative)\n─────────\nMUL · MULH · MULHSU · MULHU\nDIV · DIVU · REM · REMU"]
+            RESMUX{"🔀 Result Mux\n─────────\n0: alu_result\n1: mul_div_result"}
+
+            MUXA --> ALU
+            MUXB --> ALU
+            MUXA --> MD
+            MUXB --> MD
+            ALU_CTRL -->|"alu_op"| ALU
+            ALU_CTRL -->|"md_op + start"| MD
+            ALU --> RESMUX
+            MD -->|"done"| RESMUX
+        end
+
+        subgraph BRANCH_UNIT ["Branch Resolution"]
+            direction LR
+            BREVAL["🔱 Branch Evaluator\n─────────\nBEQ · BNE · BLT\nBGE · BLTU · BGEU"]
+            TADD["📍 Target Adder\n─────────\nJAL/B: PC + imm\nJALR: rs1 + imm"]
+        end
+
+        subgraph BYTE_ALIGN ["Store Alignment"]
+            STOREMUX["📦 Byte-Enable\nGenerator\n─────────\nSB → 1-byte en\nSH → 2-byte en\nSW → 4-byte en"]
+        end
+
+        FWD_UNIT --> MUXA
+        FWD_UNIT --> MUXB
     end
 
-    EXREG(["EX/MEM\nReg"])
+    %% ── EX/MEM Pipeline Register ────────────────────────────────────────────
+    EX_MEM_REG["EX/MEM Pipeline Register\nex_mem_alu_result · write_data · rd\nbyte_en · funct3 · MemRead/Write · RegWrite"]
 
-    subgraph MEM ["④ MEM — Memory Access"]
-        direction TB
-        DMEM["Data\nMemory"]
+    %% ═══════════════════════════════════════════════════════════════════════════
+    %% STAGE 4: MEMORY ACCESS (MEM)
+    %% ═══════════════════════════════════════════════════════════════════════════
+    subgraph MEM_STAGE ["🟪 STAGE 4 — MEMORY ACCESS (MEM)"]
+        direction LR
+        DMEM[("💾 Data Memory\n(Byte-Addressable)\n─────────\nbyte_en[3:0]\nselective writes")]
+        LOADALIGN["📦 Load Alignment\n& Sign Extension\n─────────\nLB · LBU · LH\nLHU · LW"]
+
+        DMEM --> LOADALIGN
     end
 
-    MEMREG(["MEM/WB\nReg"])
+    %% ── MEM/WB Pipeline Register ────────────────────────────────────────────
+    MEM_WB_REG["MEM/WB Pipeline Register\nmem_wb_alu_result · read_data · rd\nfunct3 · MemToReg · RegWrite"]
 
-    subgraph WB ["⑤ WB — Write-Back"]
-        direction TB
-        WBMUX["MUX\nALU / Mem Data"]
+    %% ═══════════════════════════════════════════════════════════════════════════
+    %% STAGE 5: WRITE-BACK (WB)
+    %% ═══════════════════════════════════════════════════════════════════════════
+    subgraph WB_STAGE ["🟥 STAGE 5 — WRITE-BACK (WB)"]
+        direction LR
+        WBMUX{"🔀 WB Mux\n─────────\n0: alu_result\n1: mem_data"}
     end
 
-    %% ── Forward (left-to-right) flow ──────────────────────────────────────────
-    IF --> IFREG --> ID --> IDREG --> EX --> EXREG --> MEM --> MEMREG --> WB
+    %% ═══════════════════════════════════════════════════════════════════════════
+    %% HAZARD DETECTION UNIT (Spans across stages)
+    %% ═══════════════════════════════════════════════════════════════════════════
+    subgraph HDU ["🛡️ HAZARD DETECTION UNIT"]
+        direction LR
+        LOADUSE["Load-Use\nDetector\n─────────\nid_ex_MemRead &&\nid_ex_rd == rs1/rs2"]
+        MDSTALL["MUL/DIV\nStall\n─────────\nis_mul_div &\n~done"]
+        FLUSH_CTRL["Flush\nControl\n─────────\ntake_branch_or_jump"]
+    end
 
-    %% ── Write-Back to Register File (WB → ID) ─────────────────────────────────
-    WB -- "wb_write_data\n(mem_wb_rd, mem_wb_RegWrite)" --> RF
+    %% ═══════════════════════════════════════════════════════════════════════════
+    %% MAIN PIPELINE FLOW (top-to-bottom through stages)
+    %% ═══════════════════════════════════════════════════════════════════════════
+    IF_STAGE ==> IF_ID_REG ==> ID_STAGE ==> ID_EX_REG ==> EX_STAGE ==> EX_MEM_REG ==> MEM_STAGE ==> MEM_WB_REG ==> WB_STAGE
 
-    %% ── PC Next selection (EX → IF) ───────────────────────────────────────────
-    TADD -. "target_address\n(branch/jump taken)" .-> PC
-    PC4 -. "PC+4\n(no branch)" .-> PC
+    %% ═══════════════════════════════════════════════════════════════════════════
+    %% BACKWARD DATA PATHS (Write-back, Forwarding, Branch resolution)
+    %% ═══════════════════════════════════════════════════════════════════════════
 
-    %% ── Forwarding paths (EX/MEM → EX, MEM/WB → EX) ──────────────────────────
-    EXREG -. "EX→EX forward\n(ex_mem_alu_result)" .-> HDU
-    MEMREG -. "MEM→EX forward\n(wb_write_data)" .-> HDU
-    HDU -. "forwardA / forwardB" .-> MUXA
-    HDU -. "forwardA / forwardB" .-> MUXB
+    %% Write-back to Register File (WB → ID)
+    WBMUX -.->|"wb_write_data\n→ register file"| RF
 
-    %% ── Stall & Flush control (EX → IF/ID) ────────────────────────────────────
-    HDU -. "pipeline_stall\n(load-use / MUL-DIV)" .-> IFREG
-    HDU -. "pipeline_stall" .-> IDREG
-    BREVAL -. "flush\n(take_branch_or_jump)" .-> IFREG
-    BREVAL -. "flush" .-> IDREG
+    %% PC Next selection (EX → IF)
+    BREVAL -.->|"take_branch_or_jump"| PCMUX
+    TADD -.->|"target_address"| PCMUX
+
+    %% EX-to-EX Forwarding (EX/MEM → EX muxes)
+    EX_MEM_REG -.->|"EX→EX fwd\nex_mem_alu_result"| FWDA
+    EX_MEM_REG -.->|"EX→EX fwd\nex_mem_alu_result"| FWDB
+
+    %% MEM-to-EX Forwarding (MEM/WB → EX muxes)
+    MEM_WB_REG -.->|"MEM→EX fwd\nwb_write_data"| FWDA
+    MEM_WB_REG -.->|"MEM→EX fwd\nwb_write_data"| FWDB
+
+    %% ═══════════════════════════════════════════════════════════════════════════
+    %% HAZARD CONTROL SIGNALS (Stall & Flush paths)
+    %% ═══════════════════════════════════════════════════════════════════════════
+
+    %% Pipeline stall freezes IF and ID stages
+    LOADUSE -.->|"stall PC\n+ freeze IF/ID"| IF_ID_REG
+    MDSTALL -.->|"stall pipeline\n(hold all regs)"| ID_EX_REG
+
+    %% Flush injects NOPs into IF/ID and ID/EX
+    FLUSH_CTRL -.->|"flush → NOP"| IF_ID_REG
+    FLUSH_CTRL -.->|"flush → NOP"| ID_EX_REG
+
+    %% ═══════════════════════════════════════════════════════════════════════════
+    %% STYLING
+    %% ═══════════════════════════════════════════════════════════════════════════
+    classDef stageIF fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a5f
+    classDef stageID fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef stageEX fill:#fed7aa,stroke:#ea580c,stroke-width:2px,color:#7c2d12
+    classDef stageMEM fill:#e9d5ff,stroke:#7c3aed,stroke-width:2px,color:#3b0764
+    classDef stageWB fill:#fecaca,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+    classDef pipeReg fill:#f1f5f9,stroke:#475569,stroke-width:3px,color:#0f172a,font-weight:bold
+    classDef hazard fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f
+
+    class IF_STAGE stageIF
+    class ID_STAGE stageID
+    class EX_STAGE stageEX
+    class MEM_STAGE stageMEM
+    class WB_STAGE stageWB
+    class IF_ID_REG,ID_EX_REG,EX_MEM_REG,MEM_WB_REG pipeReg
+    class HDU hazard
 ```
 
 > **Pipeline Register Key** — `IF/ID`, `ID/EX`, `EX/MEM`, `MEM/WB` are sequential edge-triggered registers that boundary-separate each stage and carry both datapath values and control signals downstream.
