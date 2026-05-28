@@ -23,8 +23,8 @@ localparam SLT = 4'd11;
         md_op      = 3'b000;
         
         case (ALU_OP)
-        3'd0: begin
-            case(funct3)
+        3'd0: begin                                     // I-TYPE
+            case(funct3)                        
                 3'b000 : alu_op = ADD;
                 3'b001 : alu_op = SLL;
                 3'b010 : alu_op = SLT;
@@ -43,15 +43,7 @@ localparam SLT = 4'd11;
             endcase
         end
         3'd1: begin                                    // B
-            case(funct3)
-                3'b000 : alu_op = SUB;                //BEQ
-                3'b001 : alu_op = SUB;
-                3'b100 : alu_op = SUB;
-                3'b101 : alu_op = SUB;
-                3'b110 : alu_op = SUB;
-                3'b111 : alu_op = SUB;
-                default: alu_op = SUB;
-            endcase
+            alu_op = SUB;                              // NO NEED TO CHECK FUNCT3 - ALL REQS SAME OPERATION
         end
         3'd2: begin
             if (funct7 == 7'b0000001) begin
@@ -60,9 +52,9 @@ localparam SLT = 4'd11;
                 md_op      = funct3;
                 alu_op     = ADD; // Doesn't matter
             end else begin
-                case({funct7, funct3})
-                        10'b0000000000: alu_op = ADD;  // ADD
-                        10'b0100000000: alu_op = SUB;  // SUB
+                case({funct7, funct3})                  // R-TYPE
+                        10'b0000000000: alu_op = ADD;  
+                        10'b0100000000: alu_op = SUB;  
                         10'b0000000111: alu_op = AND;
                         10'b0000000110: alu_op = OR;
                         10'b0000000100: alu_op = XOR;
@@ -75,7 +67,7 @@ localparam SLT = 4'd11;
             end
         end
 
-        3'd3: alu_op = ADD;
+        3'd3: alu_op = ADD;                             // MEM/U-TYPE
 
         default : alu_op = ADD;
         endcase
