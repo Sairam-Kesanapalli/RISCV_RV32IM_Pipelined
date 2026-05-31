@@ -28,7 +28,7 @@ The hallmark of this repository is the complete hardware-realistic integration o
 ## Architectural Details
 
 ### 5-Stage Pipeline Overview
-Architecture diagram WIP. 
+Architecture diagram [WIP]. 
 
 ### Hazard Summary
 
