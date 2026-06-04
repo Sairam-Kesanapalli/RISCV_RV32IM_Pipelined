@@ -92,13 +92,14 @@ RISCV_RV32IM_Pipelined/
 │   └── test_lw_sw.v              # Simple memory access sanity testbench
 ├── scripts/
 │   └── golden_model.py           # Cycle-accurate python instruction set simulator (ISS)
-├── tests/
+├── regression_tests/
 │   ├── I-Type/                   # Hex tests for immediate arithmetic
 │   ├── R-Type/                   # Hex tests for register arithmetic
 │   ├── U-Type/                   # Hex tests for LUI and AUIPC
 │   ├── J-Type/                   # Hex tests for unconditional jumps
 │   ├── Mul/                      # Hex tests for MUL, MULH, MULHU, MULHSU
 │   ├── Div/                      # Hex tests for DIV, DIVU, REM, REMU
+│   ├── Mem_Access/               # Hex tests for sub-word and word loads and stores (LB, LH, LW, LBU, LHU, SB, SH)
 │   └── Edge_Cases/               # Hex tests for Divide by Zero, Overflow, etc.
 ├── .github/
 │   └── workflows/
@@ -117,30 +118,34 @@ The **Software Verification Testbench (SVT)** uses a co-simulation approach wher
 The Verilog RTL simulates the program, and at the end of execution, `svt_tb.v` automatically runs absolute asserts to compare the hardware registers/memory against the golden `.hex` results.
 
 ### 2. Regression Testing (`make regression`)
-To run the automated, categorized regression suite across all 7 test categories:
+To run the automated, categorized regression suite across all 8 test categories:
 ```bash
 make regression
 ```
 
-This target runs a shell loop over the `tests/` directory, invoking the golden model for each test to generate directory-specific outputs, runs the RTL simulation passing `+TEST_DIR=<test>`, and logs the overall status:
+This target runs a shell loop over the `regression_tests/` directory, invoking the golden model for each test to generate directory-specific outputs, runs the RTL simulation passing `+TEST_DIR=<test>`, and logs the overall status:
 
 ```text
 =======================================================
               RUNNING REGRESSION SUITE                 
 =======================================================
-Running tests/Div...
+Running regression_tests/Div...
 [PASS] Div
-Running tests/Edge_Cases...
+Running regression_tests/Edge_Cases...
 [PASS] Edge_Cases
-Running tests/I-Type...
+Running regression_tests/I-Type...
 [PASS] I-Type
-Running tests/J-Type...
+Running regression_tests/J-Type...
 [PASS] J-Type
-Running tests/Mul...
+Running regression_tests/Mem_Access...
+[PASS] Mem_Access
+Running regression_tests/Mul...
 [PASS] Mul
-Running tests/R-Type...
+Running regression_tests/R-Type...
 [PASS] R-Type
-Running tests/U-Type...
+Running regression_tests/Svt_custom_tests...
+[PASS] Svt_custom_tests
+Running regression_tests/U-Type...
 [PASS] U-Type
 =======================================================
 ```
@@ -152,7 +157,90 @@ GitHub Actions are fully integrated via `.github/workflows/makefile.yml`. Every 
 1. Spins up an Ubuntu container.
 2. Installs `iverilog` and `python3` dependencies.
 3. Runs `make svt` to verify the baseline CPU integrity.
-4. Runs `make regression` to verify all 7 isolated hardware operations.
+4. Runs `make regression` to verify all 8 isolated hardware operations.
+
+### 4. Performance Counters & CPI Analysis
+The processor includes hardware performance counters that track cycles, instruction retirement, and various pipeline hazards. The cycle counter `total_cycles` automatically freezes once the processor reaches a halt condition and the pipeline has completely drained.
+
+At the end of any SVT run, the simulation prints a detailed characterization of the processor's execution:
+- **Core Metrics:** Total clock cycles, retired instructions, and the overall CPI (Cycles Per Instruction).
+- **Instruction Mix:** Percentage breakdown of ALU, Mul/Div, Load, Store, Branch, and Jump instructions.
+- **Branch Predictor Metrics:** Taken and not-taken branches to analyze static predictor efficiency.
+- **Pipeline Stall & Overhead Analysis:** Exact cycle contribution of load-use stalls, multiplier stalls, and branch flushes.
+
+Example CPI scenarios on the custom test program:
+
+#### Scenario A: Mixed RV32IM Workload (with 32-cycle iterative MUL/DIV)
+When executing the custom test suite (`Svt_custom_tests`) which contains a mix of standard instructions and MUL/DIV operations, the math unit's iterative execution introduces significant stalls:
+- **Instructions Retired:** 320
+- **Total Clock Cycles:** 1500
+- **Overall CPI:** **4.688**
+- **Overhead Analysis:** **Multiplier stalls dominate the execution**, consuming **70.80%** (1,062 cycles) of all clock cycles.
+
+```text
+=======================================================
+             PROCESSOR PERFORMANCE REPORT
+=======================================================
+  [Core Metrics]
+    Total Clock Cycles       : 1500
+    Instructions Retired     : 320
+    Overall CPI              : 4.688 (Ideal = 1.000)
+
+  [Pipeline Stall & Overhead Analysis]
+    Load-Use Stall Cycles    : 0 (0.00% of cycles)
+    Multiplier Stall Cycles  : 1062 (70.80% of cycles)
+    Control Hazard Flushes   : 58 (3.87% of cycles)
+    Total Wasted Cycles      : 1120 (74.67% overhead)
+=======================================================
+```
+
+#### Scenario B: Base RV32I Workload (MUL/DIV replaced with NOPs)
+If we remove the M-type operations by replacing them with `NOP`s (`00000013`), we eliminate the iterative execution stalls:
+- **Instructions Retired:** 1098
+- **Total Clock Cycles:** 1500
+- **Overall CPI:** **1.366**
+- **Overhead Analysis:** Multiplier stalls are completely eliminated. The remaining **13.33% overhead** is entirely due to control flushes (taken branches/jumps) and pipeline fill/drain.
+
+```text
+=======================================================
+             PROCESSOR PERFORMANCE REPORT
+=======================================================
+  [Core Metrics]
+    Total Clock Cycles       : 1500
+    Instructions Retired     : 1098
+    Overall CPI              : 1.366 (Ideal = 1.000)
+
+  [Pipeline Stall & Overhead Analysis]
+    Load-Use Stall Cycles    : 0 (0.00% of cycles)
+    Multiplier Stall Cycles  : 0 (0.00% of cycles)
+    Control Hazard Flushes   : 200 (13.33% of cycles)
+    Total Wasted Cycles      : 200 (13.33% overhead)
+=======================================================
+```
+
+#### Scenario C: Pure ALU Workload (e.g., `R-Type` regression)
+When running a program with no control/data hazards and no M-type instructions (like the 57-instruction `R-Type` regression test):
+- **Instructions Retired:** 57
+- **Total Clock Cycles:** 61
+- **Overall CPI:** **1.070**
+- **Overhead Analysis:** No stalls or flushes. The CPI of 1.070 is due to the **4-cycle pipeline fill overhead** (`57 + 4 = 61` cycles total to retire 57 instructions). As the instruction count increases, the pipeline fill overhead is amortized, and CPI converges toward the ideal **1.000**.
+
+```text
+=======================================================
+             PROCESSOR PERFORMANCE REPORT
+=======================================================
+  [Core Metrics]
+    Total Clock Cycles       : 61
+    Instructions Retired     : 57
+    Overall CPI              : 1.070 (Ideal = 1.000)
+
+  [Pipeline Stall & Overhead Analysis]
+    Load-Use Stall Cycles    : 0 (0.00% of cycles)
+    Multiplier Stall Cycles  : 0 (0.00% of cycles)
+    Control Hazard Flushes   : 0 (0.00% of cycles)
+    Total Wasted Cycles      : 0 (0.00% overhead)
+=======================================================
+```
 
 ---
 
