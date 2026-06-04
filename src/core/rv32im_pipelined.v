@@ -602,6 +602,7 @@ module rv32im_pipelined #(
                         1'b1: aligned_read_data = {16'd0, mem_data[31:16]};
                     endcase
                 end
+                default: ;
             endcase
         end
     end
