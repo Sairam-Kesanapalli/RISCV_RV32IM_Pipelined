@@ -689,8 +689,9 @@ module rv32im_pipelined #(
             cnt_mul_div_stalls   <= 64'd0;
             cnt_flush_cycles     <= 64'd0;
         end else begin
-            // 1. Clock cycle counting
-            total_cycles <= total_cycles + 1;
+            // 1. Clock cycle counting (stops when processor is halted and pipeline is drained)
+            if (!halt || if_id_valid || id_ex_valid || ex_mem_valid || mem_wb_valid)
+                total_cycles <= total_cycles + 1;
 
             // 2. Instruction Retirement Counting at WB stage
             if (mem_wb_valid) begin
