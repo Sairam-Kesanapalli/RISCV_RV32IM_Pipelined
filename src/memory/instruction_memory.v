@@ -3,7 +3,9 @@ module instruction_memory #(
     parameter DEPTH = 256,
     parameter INIT_FILE = ""
 )(
+    /* verilator lint_off UNUSEDSIGNAL */
     input [XLEN-1:0] addr,
+    /* verilator lint_on UNUSEDSIGNAL */
     output [31:0] instr
 );
 

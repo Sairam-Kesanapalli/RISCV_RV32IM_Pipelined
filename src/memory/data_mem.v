@@ -6,7 +6,9 @@ module data_mem #(
         input MemRead,
         input MemWrite,
         input [XLEN-1:0] write_data,
+        /* verilator lint_off UNUSEDSIGNAL */
         input [XLEN-1:0] addr,
+        /* verilator lint_on UNUSEDSIGNAL */
         input [3:0] byte_en,
         output reg [XLEN-1:0] read_data
     );
