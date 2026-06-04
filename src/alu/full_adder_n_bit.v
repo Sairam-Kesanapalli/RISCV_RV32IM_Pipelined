@@ -30,8 +30,7 @@ module full_adder_n_bit #(
     output [WIDTH-1:0] sum
     );
 
-    assign {c_out, sum} = {1'b0, a} + {1'b0, b} + c_in;
-
+    assign {c_out, sum} = {1'b0, a} + {1'b0, b} + {32'b0, c_in};    
 
     //logic c1,c2,c3;
 
