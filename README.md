@@ -84,7 +84,7 @@ RISCV_RV32IM_Pipelined/
 │   │   ├── full_adder_n_bit.v    # Ripple-carry adder
 │   │   └── mul_div.v             # 32-cycle iterative multiplication and division module
 │   └── memory/
-│       ├── instruction_mem.v     # Dynamic runtime memory injection (readmemh)
+│       ├── instruction_memory.v  # Dynamic runtime memory injection (readmemh)
 │       └── data_mem.v            # Data memory
 ├── tb/
 │   ├── rv32im_tb.v               # Main testbench (module: rv32im_tb)

@@ -23,7 +23,7 @@ SOURCES = $(SRC_CORE)/rv32im_pipelined.v \
           $(SRC_ALU)/ALU_n_bit.v \
           $(SRC_ALU)/full_adder_n_bit.v \
           $(SRC_ALU)/mul_div.v \
-          $(SRC_MEM)/instruction_mem.v \
+          $(SRC_MEM)/instruction_memory.v \
           $(SRC_MEM)/data_mem.v
 
 # Testbenches

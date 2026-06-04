@@ -1,7 +1,7 @@
 import re
 import sys
 
-# 1. Parse instruction_mem.v to extract opcodes
+# 1. Parse instruction_memory.v to extract opcodes
 #    Supports both 32'hXXXX hex literals and Verilog concatenation syntax
 #    like {7'b0000001, 5'd2, 5'd1, 3'b000, 5'd10, 7'b0110011}
 def parse_imem(path):
