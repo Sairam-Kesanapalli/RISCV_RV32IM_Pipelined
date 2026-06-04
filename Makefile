@@ -19,7 +19,7 @@ SOURCES = $(SRC_CORE)/rv32im_pipelined.v \
           $(SRC_CORE)/control_unit.v \
           $(SRC_CORE)/alu_control.v \
           $(SRC_CORE)/imm_gen.v \
-          $(SRC_CORE)/register.v \
+          $(SRC_CORE)/register_file.v \
           $(SRC_ALU)/ALU_n_bit.v \
           $(SRC_ALU)/full_adder_n_bit.v \
           $(SRC_ALU)/mul_div.v \
@@ -106,7 +106,7 @@ unit_tests:
 	fi; \
 	\
 	echo "Running Register File unit test..."; \
-	$(CC) $(CFLAGS) -o $(OUT_REG) $(TB_REG) src/core/register.v && $(SIM) $(OUT_REG) > register_test.log 2>&1; \
+	$(CC) $(CFLAGS) -o $(OUT_REG) $(TB_REG) src/core/register_file.v && $(SIM) $(OUT_REG) > register_test.log 2>&1; \
 	if [ $$? -eq 0 ] && ! grep -q "\[FAIL\]" register_test.log; then \
 		echo "register file [PASS]"; \
 	else \
@@ -192,7 +192,7 @@ wave-control_unit:
 
 # Compile and run Register File testbench
 register_test:
-	$(CC) $(CFLAGS) -o $(OUT_REG) $(TB_REG) src/core/register.v
+	$(CC) $(CFLAGS) -o $(OUT_REG) $(TB_REG) src/core/register_file.v
 	$(SIM) $(OUT_REG)
 
 # Open REGISTER GTKWave waveform

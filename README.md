@@ -78,7 +78,7 @@ RISCV_RV32IM_Pipelined/
 │   │   ├── control_unit.v        # Combinational control unit
 │   │   ├── alu_control.v         # Decodes ALU operation (standard and M-type)
 │   │   ├── imm_gen.v             # Immediate generator (R/I/S/B/U/J formats)
-│   │   └── register.v            # 32x32 register file with internal forwarding
+│   │   └── register_file.v       # 32x32 register file with internal forwarding
 │   ├── alu/
 │   │   ├── ALU_n_bit.v           # Base N-bit parameterized ALU
 │   │   ├── full_adder_n_bit.v    # Ripple-carry adder

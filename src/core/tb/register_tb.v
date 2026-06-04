@@ -12,7 +12,7 @@ reg [4:0] rs2;
 wire [31:0] read_data1;
 wire [31:0] read_data2;
 
-// Instantiated as register_file (matches register.v)
+// Instantiated as register_file (matches register_file.v)
 register_file rf (
     .clk(clk),
     .rst_n(rst_n),
