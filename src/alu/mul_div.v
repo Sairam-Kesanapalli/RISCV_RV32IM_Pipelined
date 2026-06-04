@@ -63,7 +63,7 @@ module mul_div #(
     // --- Divider ---
     // Restoring division: remainder is shifted left each cycle, divisor subtracted.
     reg [WIDTH-1:0]   quotient;
-    reg [WIDTH:0]     remainder;         // 33-bit (extra bit for subtraction sign test)
+    reg [WIDTH-1:0]   remainder;         // WIDTH-bit
     reg [WIDTH-1:0]   divisor_reg;
 
     // --- Flags ---
@@ -150,7 +150,7 @@ module mul_div #(
                                     div_overflow <= 1;
                                     state        <= S_FINISH;
                                 end else begin
-                                    remainder     <= {(WIDTH+1){1'b0}};
+                                    remainder     <= {WIDTH{1'b0}};
                                     divisor_reg   <= abs_B;
                                     quotient      <= abs_A;    // Dividend bits will be shifted out of here
                                     negate_result <= A[WIDTH-1] ^ B[WIDTH-1];
@@ -163,7 +163,7 @@ module mul_div #(
                                     div_by_zero <= 1;
                                     state       <= S_FINISH;
                                 end else begin
-                                    remainder   <= {(WIDTH+1){1'b0}};
+                                    remainder   <= {WIDTH{1'b0}};
                                     divisor_reg <= B;
                                     quotient    <= A;
                                     state       <= S_DIV_ITER;
@@ -179,7 +179,7 @@ module mul_div #(
                                     div_overflow <= 1;
                                     state        <= S_FINISH;
                                 end else begin
-                                    remainder     <= {(WIDTH+1){1'b0}};
+                                    remainder     <= {WIDTH{1'b0}};
                                     divisor_reg   <= abs_B;
                                     quotient      <= abs_A;
                                     negate_result <= A[WIDTH-1]; // Remainder has dividend's sign
@@ -193,7 +193,7 @@ module mul_div #(
                                     div_by_zero <= 1;
                                     state       <= S_FINISH;
                                 end else begin
-                                    remainder   <= {(WIDTH+1){1'b0}};
+                                    remainder   <= {WIDTH{1'b0}};
                                     divisor_reg <= B;
                                     quotient    <= A;
                                     state       <= S_DIV_ITER;
@@ -213,11 +213,13 @@ module mul_div #(
                 // and shift multiplier right by 1.
                 // After 32 iterations, accumulator holds the 64-bit product.
                 S_MUL_ITER: begin
-                    if (mplier[0])
-                        accumulator <= ({ {1'b0, accumulator[WIDTH*2-1:WIDTH]} + mcand,
-                                         accumulator[WIDTH-1:0] }) >> 1;
-                    else
+                    if (mplier[0]) begin : mul_block
+                        reg [WIDTH:0] sum;
+                        sum = {1'b0, accumulator[WIDTH*2-1:WIDTH]} + mcand;
+                        accumulator <= {sum, accumulator[WIDTH-1:1]};
+                    end else begin
                         accumulator <= accumulator >> 1;
+                    end
 
                     mplier <= mplier >> 1;
                     count  <= count + 1;
@@ -241,16 +243,16 @@ module mul_div #(
                     begin : div_block
                         reg [WIDTH:0] shifted_rem;
                         reg [WIDTH:0] sub_result;
-                        shifted_rem = {remainder[WIDTH-1:0], quotient[WIDTH-1]};
+                        shifted_rem = {remainder, quotient[WIDTH-1]};
                         sub_result  = shifted_rem - {1'b0, divisor_reg};
 
                         if (!sub_result[WIDTH]) begin
                             // Subtraction succeeded (result >= 0)
-                            remainder <= sub_result;
+                            remainder <= sub_result[WIDTH-1:0];
                             quotient  <= {quotient[WIDTH-2:0], 1'b1};
                         end else begin
                             // Subtraction failed (result < 0), restore
-                            remainder <= shifted_rem;
+                            remainder <= shifted_rem[WIDTH-1:0];
                             quotient  <= {quotient[WIDTH-2:0], 1'b0};
                         end
                     end
@@ -274,8 +276,8 @@ module mul_div #(
                         end else if (div_overflow) begin
                             Result <= is_rem_op ? {WIDTH{1'b0}} : saved_dividend;
                         end else if (is_rem_op) begin
-                            Result <= negate_result ? (~remainder[WIDTH-1:0] + 1'b1)
-                                                    : remainder[WIDTH-1:0];
+                            Result <= negate_result ? (~remainder + 1'b1)
+                                                    : remainder;
                         end else begin
                             Result <= negate_result ? (~quotient + 1'b1) : quotient;
                         end
