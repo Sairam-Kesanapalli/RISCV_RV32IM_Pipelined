@@ -64,7 +64,9 @@ module rv32im_pipelined #(
     reg [XLEN-1:0] mem_wb_read_data;
     reg [XLEN-1:0] mem_wb_alu_result;
     reg [4:0]      mem_wb_rd;
+    /* verilator lint_off UNUSEDSIGNAL */
     reg [2:0]      mem_wb_funct3;
+    /* verilator lint_on UNUSEDSIGNAL */
     reg            mem_wb_MemToReg;
     reg            mem_wb_RegWrite;
 
@@ -403,7 +405,6 @@ module rv32im_pipelined #(
     wire zero_flag, carry_out, negative, overflow;
     wire [XLEN-1:0] alu_result;
     wire [31:0] mul_div_result;
-    wire busy;
 
     mul_div md(
         .clk(clk),
@@ -413,7 +414,9 @@ module rv32im_pipelined #(
         .A(alu_input_a),
         .B(alu_input_b),
         .Result(mul_div_result),
-        .busy(busy),
+        /* verilator lint_off PINCONNECTEMPTY */
+        .busy(),
+        /* verilator lint_on PINCONNECTEMPTY */
         .done(done)
     );
 
