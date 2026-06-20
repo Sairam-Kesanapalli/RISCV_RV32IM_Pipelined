@@ -209,7 +209,7 @@ wave-imm_gen:
 	gtkwave imm_gen.vcd &
 
 # Clean up generated files
-clean: clean-logs clean-sigs
+clean:
 	rm -f $(OUT_MAIN) $(OUT_DEBUG) $(OUT_SVT) $(OUT_ALU) $(OUT_MUL_DIV) $(OUT_CTRL) $(OUT_REG) $(OUT_IMM_GEN) golden_sim *.vcd tb/expected_*.hex regression_tests/*/expected_*.hex
 
 # Clean up only log files
