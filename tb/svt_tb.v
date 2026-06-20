@@ -165,7 +165,7 @@ module svt_tb;
                 
                 if (rv.mem_wb_is_branch || rv.mem_wb_is_jump) begin
                     $fdisplay(rtl_trace_file, "  BRANCH/JUMP: taken=%0b target=0x%08h",
-                        rv.mem_wb_branch_taken, rv.mem_wb_pc_next);
+                        rv.mem_wb_is_jump ? 1'b1 : rv.mem_wb_branch_taken, rv.mem_wb_pc_next);
                 end
                 
                 if (rv.mem_wb_is_load) begin
