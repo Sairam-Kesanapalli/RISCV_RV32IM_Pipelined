@@ -45,15 +45,7 @@ OUT_CTRL    = control_sim
 OUT_REG     = register_sim
 OUT_IMM_GEN = imm_gen_sim
 
-<<<<<<< HEAD
-.PHONY: all compile sim clean debug svt svt_golden wave wave-svt alu_test wave-alu mul_div_test wave-mul_div control_test wave-control_unit register_test wave-register imm_gen_test wave-imm_gen unit_tests clean-logs clean-sigs
-=======
-<<<<<<< Updated upstream
-.PHONY: all compile sim clean debug svt svt_golden wave wave-svt alu_test wave-alu mul_div_test wave-mul_div control_test wave-control_unit register_test wave-register imm_gen_test wave-imm_gen unit_tests
-=======
 .PHONY: all compile sim clean debug svt svt_golden wave wave-svt alu_test wave-alu mul_div_test wave-mul_div control_test wave-control_unit register_test wave-register imm_gen_test wave-imm_gen unit_tests clean-logs clean-sigs clean_spike_cache clean_compiler_cache clean_rtl_cache
->>>>>>> Stashed changes
->>>>>>> 9fa8eb3 (Updates Makefile to clean logs)
 
 all: compile sim
 
@@ -220,8 +212,7 @@ wave-imm_gen:
 clean: clean_spike_cache clean_compiler_cache clean_rtl_cache
 	rm -f $(OUT_MAIN) $(OUT_DEBUG) $(OUT_SVT) $(OUT_ALU) $(OUT_MUL_DIV) $(OUT_CTRL) $(OUT_REG) $(OUT_IMM_GEN) golden_sim *.vcd
 
-<<<<<<< Updated upstream
-=======
+
 # Clean up only log files
 clean-logs:
 	rm -f *.log regression_tests/*/*.log
@@ -257,5 +248,4 @@ clean-sigs:
 
 
 
->>>>>>> Stashed changes
 
