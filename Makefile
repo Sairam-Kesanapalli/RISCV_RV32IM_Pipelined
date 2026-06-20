@@ -45,7 +45,7 @@ OUT_CTRL    = control_sim
 OUT_REG     = register_sim
 OUT_IMM_GEN = imm_gen_sim
 
-.PHONY: all compile sim clean debug svt svt_golden wave wave-svt alu_test wave-alu mul_div_test wave-mul_div control_test wave-control_unit register_test wave-register imm_gen_test wave-imm_gen unit_tests
+.PHONY: all compile sim clean debug svt svt_golden wave wave-svt alu_test wave-alu mul_div_test wave-mul_div control_test wave-control_unit register_test wave-register imm_gen_test wave-imm_gen unit_tests clean-logs clean-sigs
 
 all: compile sim
 
@@ -211,5 +211,14 @@ wave-imm_gen:
 # Clean up generated files
 clean:
 	rm -f $(OUT_MAIN) $(OUT_DEBUG) $(OUT_SVT) $(OUT_ALU) $(OUT_MUL_DIV) $(OUT_CTRL) $(OUT_REG) $(OUT_IMM_GEN) golden_sim *.vcd tb/expected_*.hex regression_tests/*/expected_*.hex
+
+# Clean up only log files
+clean-logs:
+	rm -f *.log regression_tests/*/*.log
+
+# Clean up only signature files
+clean-sigs:
+	rm -f *.signature *.sig regression_tests/*/*.signature regression_tests/*/*.sig
+
 
 

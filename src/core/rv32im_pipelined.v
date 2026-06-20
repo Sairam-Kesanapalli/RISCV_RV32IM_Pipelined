@@ -48,6 +48,9 @@ module rv32im_pipelined #(
     reg            id_ex_MemToReg;
     reg            id_ex_Branch;
     reg            id_ex_Jump;
+`ifdef VERIFICATION
+    reg [XLEN-1:0] id_ex_instr;
+`endif
 
     // EX/MEM Pipeline Register
     reg [XLEN-1:0] ex_mem_alu_result;
@@ -59,6 +62,15 @@ module rv32im_pipelined #(
     reg            ex_mem_MemWrite;
     reg            ex_mem_MemToReg;
     reg            ex_mem_RegWrite;
+`ifdef VERIFICATION
+    reg [XLEN-1:0] ex_mem_pc;
+    reg [XLEN-1:0] ex_mem_instr;
+    reg [XLEN-1:0] ex_mem_pc_next;
+    reg [4:0]      ex_mem_rs1;
+    reg [4:0]      ex_mem_rs2;
+    reg [XLEN-1:0] ex_mem_rs1_data;
+    reg [XLEN-1:0] ex_mem_rs2_data;
+`endif
 
     // MEM/WB Pipeline Register
     reg [XLEN-1:0] mem_wb_read_data;
@@ -69,6 +81,17 @@ module rv32im_pipelined #(
     /* verilator lint_on UNUSEDSIGNAL */
     reg            mem_wb_MemToReg;
     reg            mem_wb_RegWrite;
+`ifdef VERIFICATION
+    reg [XLEN-1:0] mem_wb_pc;
+    reg [XLEN-1:0] mem_wb_instr;
+    reg [XLEN-1:0] mem_wb_pc_next;
+    reg [4:0]      mem_wb_rs1;
+    reg [4:0]      mem_wb_rs2;
+    reg [XLEN-1:0] mem_wb_rs1_data;
+    reg [XLEN-1:0] mem_wb_rs2_data;
+    reg [XLEN-1:0] mem_wb_write_data_in;
+    reg [3:0]      mem_wb_byte_en;
+`endif
 
     // IF/ID Stage Validity
     reg            if_id_valid;
@@ -299,6 +322,9 @@ module rv32im_pipelined #(
             id_ex_is_jump       <= 0;
             id_ex_is_jalr       <= 0;
             id_ex_valid         <= 0;
+`ifdef VERIFICATION
+            id_ex_instr         <= 32'h00000013;
+`endif
         end else if (flush) begin
             id_ex_pc            <= 0;
             id_ex_read_data1    <= 0;
@@ -326,6 +352,9 @@ module rv32im_pipelined #(
             id_ex_is_jump       <= 0;
             id_ex_is_jalr       <= 0;
             id_ex_valid         <= 0;
+`ifdef VERIFICATION
+            id_ex_instr         <= 32'h00000013;
+`endif
         end else if (stall) begin
             // Multiplier stall: hold state stable
         end else if (load_use_stall) begin
@@ -356,6 +385,9 @@ module rv32im_pipelined #(
             id_ex_is_jump       <= 0;
             id_ex_is_jalr       <= 0;
             id_ex_valid         <= 0;
+`ifdef VERIFICATION
+            id_ex_instr         <= 32'h00000013;
+`endif
         end else begin
             id_ex_pc            <= if_id_pc;
             id_ex_read_data1    <= read_data1;
@@ -383,6 +415,9 @@ module rv32im_pipelined #(
             id_ex_is_jump       <= id_is_jump;
             id_ex_is_jalr       <= id_is_jalr;
             id_ex_valid         <= if_id_valid;
+`ifdef VERIFICATION
+            id_ex_instr         <= if_id_instr;
+`endif
         end
     end
 
@@ -519,6 +554,15 @@ module rv32im_pipelined #(
             ex_mem_branch_taken     <= 0;
             ex_mem_funct3           <= 0;
             ex_mem_byte_en          <= 0;
+`ifdef VERIFICATION
+            ex_mem_pc               <= 0;
+            ex_mem_instr            <= 32'h00000013;
+            ex_mem_pc_next          <= 0;
+            ex_mem_rs1              <= 0;
+            ex_mem_rs2              <= 0;
+            ex_mem_rs1_data         <= 0;
+            ex_mem_rs2_data         <= 0;
+`endif
         end else if (stall) begin
             // Bubble injection on stall: deactivate side-effects (writes)
             ex_mem_MemRead          <= 0;
@@ -534,6 +578,15 @@ module rv32im_pipelined #(
             ex_mem_branch_taken     <= 0;
             ex_mem_funct3           <= 0;
             ex_mem_byte_en          <= 0;
+`ifdef VERIFICATION
+            ex_mem_pc               <= 0;
+            ex_mem_instr            <= 32'h00000013;
+            ex_mem_pc_next          <= 0;
+            ex_mem_rs1              <= 0;
+            ex_mem_rs2              <= 0;
+            ex_mem_rs1_data         <= 0;
+            ex_mem_rs2_data         <= 0;
+`endif
         end else begin
             ex_mem_alu_result       <= ex_stage_result;
             ex_mem_write_data       <= aligned_write_data;
@@ -552,6 +605,15 @@ module rv32im_pipelined #(
             ex_mem_branch_taken     <= id_ex_Branch & id_ex_branch_taken;
             ex_mem_funct3           <= id_ex_funct3;
             ex_mem_byte_en          <= byte_en;
+`ifdef VERIFICATION
+            ex_mem_pc               <= id_ex_pc;
+            ex_mem_instr            <= id_ex_instr;
+            ex_mem_pc_next          <= take_branch_or_jump ? target_address : id_ex_pc + 4;
+            ex_mem_rs1              <= id_ex_rs1;
+            ex_mem_rs2              <= id_ex_rs2;
+            ex_mem_rs1_data         <= forwarded_read_data1;
+            ex_mem_rs2_data         <= forwarded_read_data2;
+`endif
         end
     end
 
@@ -613,35 +675,57 @@ module rv32im_pipelined #(
     // MEM/WB Pipeline Register sequential update
     always @(posedge clk) begin
         if(!rst_n) begin
-            mem_wb_read_data    <= 0;
-            mem_wb_alu_result   <= 0;
-            mem_wb_rd           <= 0;
-            mem_wb_MemToReg     <= 0;
-            mem_wb_RegWrite     <= 0;
-            mem_wb_is_alu       <= 0;
-            mem_wb_is_mul_div   <= 0;
-            mem_wb_is_load      <= 0;
-            mem_wb_is_store     <= 0;
-            mem_wb_is_branch    <= 0;
-            mem_wb_is_jump      <= 0;
-            mem_wb_valid        <= 0;
-            mem_wb_branch_taken <= 0;
-            mem_wb_funct3       <= 0;
+            mem_wb_read_data     <= 0;
+            mem_wb_alu_result    <= 0;
+            mem_wb_rd            <= 0;
+            mem_wb_MemToReg      <= 0;
+            mem_wb_RegWrite      <= 0;
+            mem_wb_is_alu        <= 0;
+            mem_wb_is_mul_div    <= 0;
+            mem_wb_is_load       <= 0;
+            mem_wb_is_store      <= 0;
+            mem_wb_is_branch     <= 0;
+            mem_wb_is_jump       <= 0;
+            mem_wb_valid         <= 0;
+            mem_wb_branch_taken  <= 0;
+            mem_wb_funct3        <= 0;
+`ifdef VERIFICATION
+            mem_wb_pc            <= 0;
+            mem_wb_instr         <= 32'h00000013;
+            mem_wb_pc_next       <= 0;
+            mem_wb_rs1           <= 0;
+            mem_wb_rs2           <= 0;
+            mem_wb_rs1_data      <= 0;
+            mem_wb_rs2_data      <= 0;
+            mem_wb_write_data_in <= 0;
+            mem_wb_byte_en       <= 0;
+`endif
         end else begin
-            mem_wb_read_data    <= aligned_read_data;
-            mem_wb_alu_result   <= ex_mem_alu_result;
-            mem_wb_rd           <= ex_mem_rd;
-            mem_wb_MemToReg     <= ex_mem_MemToReg;
-            mem_wb_RegWrite     <= ex_mem_RegWrite;
-            mem_wb_is_alu       <= ex_mem_is_alu;
-            mem_wb_is_mul_div   <= ex_mem_is_mul_div;
-            mem_wb_is_load      <= ex_mem_is_load;
-            mem_wb_is_store     <= ex_mem_is_store;
-            mem_wb_is_branch    <= ex_mem_is_branch;
-            mem_wb_is_jump      <= ex_mem_is_jump;
-            mem_wb_valid        <= ex_mem_valid;
-            mem_wb_branch_taken <= ex_mem_branch_taken;
-            mem_wb_funct3       <= ex_mem_funct3;
+            mem_wb_read_data     <= aligned_read_data;
+            mem_wb_alu_result    <= ex_mem_alu_result;
+            mem_wb_rd            <= ex_mem_rd;
+            mem_wb_MemToReg      <= ex_mem_MemToReg;
+            mem_wb_RegWrite      <= ex_mem_RegWrite;
+            mem_wb_is_alu        <= ex_mem_is_alu;
+            mem_wb_is_mul_div    <= ex_mem_is_mul_div;
+            mem_wb_is_load       <= ex_mem_is_load;
+            mem_wb_is_store      <= ex_mem_is_store;
+            mem_wb_is_branch     <= ex_mem_is_branch;
+            mem_wb_is_jump       <= ex_mem_is_jump;
+            mem_wb_valid         <= ex_mem_valid;
+            mem_wb_branch_taken  <= ex_mem_branch_taken;
+            mem_wb_funct3        <= ex_mem_funct3;
+`ifdef VERIFICATION
+            mem_wb_pc            <= ex_mem_pc;
+            mem_wb_instr         <= ex_mem_instr;
+            mem_wb_pc_next       <= ex_mem_pc_next;
+            mem_wb_rs1           <= ex_mem_rs1;
+            mem_wb_rs2           <= ex_mem_rs2;
+            mem_wb_rs1_data      <= ex_mem_rs1_data;
+            mem_wb_rs2_data      <= ex_mem_rs2_data;
+            mem_wb_write_data_in <= ex_mem_write_data;
+            mem_wb_byte_en       <= ex_mem_byte_en;
+`endif
         end
     end
 
