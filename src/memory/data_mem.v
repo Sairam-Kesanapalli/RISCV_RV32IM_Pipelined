@@ -1,6 +1,6 @@
 module data_mem #(
     parameter XLEN = 32,
-    parameter DEPTH = 256
+    parameter DEPTH = 2048
     )(
         input clk,
         input MemRead,

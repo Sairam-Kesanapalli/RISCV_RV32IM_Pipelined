@@ -1,6 +1,6 @@
 module instruction_memory #(
     parameter XLEN = 32,
-    parameter DEPTH = 256,
+    parameter DEPTH = 2048,
     parameter INIT_FILE = ""
 )(
     /* verilator lint_off UNUSEDSIGNAL */
