@@ -113,10 +113,21 @@ def parse_spike_log(log_path, csv_path, base=0x80000000):
             rd_match = RD_RE.match(line)
             if rd_match and pending is not None:
                 reg = rd_match.group("reg").replace(" ", "")
-                val = rd_match.group("val")     # verbatim — no address mangling
+                val_str = rd_match.group("val")
+                val_int = int(val_str, 16)
+                
+                # Fix PC-relative writebacks (JAL, JALR, AUIPC)
+                # These instructions store PC-derived addresses into registers.
+                # We subtract the base offset so they match the RTL traces.
+                binary = int(pending["binary"], 16)
+                opcode = binary & 0x7F
+                if opcode in (0x6F, 0x67, 0x17): # JAL (0x6F), JALR (0x67), AUIPC (0x17)
+                    val_int = (val_int - base) & 0xFFFFFFFF
+                    val_str = format(val_int, '08x')
+                    
                 abi = gpr_to_abi(reg)
                 if reg != "x0":
-                    pending["gpr"] = f"{abi}:{val}"
+                    pending["gpr"] = f"{abi}:{val_str}"
                 continue
 
             # Exception/trap lines — discard the pending instruction
