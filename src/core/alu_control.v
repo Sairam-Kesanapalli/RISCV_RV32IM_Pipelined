@@ -7,15 +7,16 @@ module alu_control(
     output reg [2:0] md_op
 );
 
-localparam ADD = 4'd0;
-localparam SUB = 4'd1;
-localparam AND = 4'd4;
-localparam OR  = 4'd5;
-localparam XOR = 4'd6;
-localparam SLL = 4'd8;
-localparam SRL = 4'd9;
-localparam SRA = 4'd10;
-localparam SLT = 4'd11;
+localparam ADD  = 4'd0;
+localparam SUB  = 4'd1;
+localparam AND  = 4'd4;
+localparam OR   = 4'd5;
+localparam XOR  = 4'd6;
+localparam SLL  = 4'd8;
+localparam SRL  = 4'd9;
+localparam SRA  = 4'd10;
+localparam SLT  = 4'd11;
+localparam SLTU = 4'd12;
 
     always @(*) begin
         // Default outputs
@@ -28,6 +29,7 @@ localparam SLT = 4'd11;
                 3'b000 : alu_op = ADD;
                 3'b001 : alu_op = SLL;
                 3'b010 : alu_op = SLT;
+                3'b011 : alu_op = SLTU;
                 3'b100 : alu_op = XOR;
                 3'b110 : alu_op = OR ;
                 3'b111 : alu_op = AND;
@@ -62,7 +64,8 @@ localparam SLT = 4'd11;
                         10'b0000000101: alu_op = SRL;
                         10'b0100000101: alu_op = SRA;
                         10'b0000000010: alu_op = SLT;
-                        default : alu_op = ADD;
+                        10'b0000000011: alu_op = SLTU;
+                        default :       alu_op = ADD;
                 endcase
             end
         end
