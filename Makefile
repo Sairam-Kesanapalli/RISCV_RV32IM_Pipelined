@@ -210,7 +210,7 @@ wave-imm_gen:
 
 # Clean up generated files
 clean: clean_spike_cache clean_compiler_cache clean_rtl_cache
-	rm -f $(OUT_MAIN) $(OUT_DEBUG) $(OUT_SVT) $(OUT_ALU) $(OUT_MUL_DIV) $(OUT_CTRL) $(OUT_REG) $(OUT_IMM_GEN) golden_sim *.vcd
+	rm -f $(OUT_MAIN) $(OUT_DEBUG) $(OUT_SVT) $(OUT_ALU) $(OUT_MUL_DIV) $(OUT_CTRL) $(OUT_REG) $(OUT_IMM_GEN) golden_sim *.vcd *.csv regression_tests/*/*.csv
 
 
 # Clean up only log files
@@ -237,15 +237,4 @@ clean_rtl_cache:
 	rm -f rtl_trace.log rtl.signature regression_tests/*/*.rtl_trace.log regression_tests/*/*.rtl.signature
 	rm -f *.signature *.sig regression_tests/*/*.signature regression_tests/*/*.sig
 	rm -f *.log regression_tests/*/*.log
-
-# Clean up only log files
-clean-logs:
-	rm -f *.log regression_tests/*/*.log
-
-# Clean up only signature files
-clean-sigs:
-	rm -f *.signature *.sig regression_tests/*/*.signature regression_tests/*/*.sig
-
-
-
 
