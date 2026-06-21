@@ -49,6 +49,7 @@ module ALU_n_bit#(
 
     wire [WIDTH-1:0] right_shift_arithmetic_sol;
     wire [WIDTH-1:0] SLT;
+    wire [WIDTH-1:0] SLTU;
 
 //  wire sub_in;
 //  wire sub_out;
@@ -115,6 +116,7 @@ module ALU_n_bit#(
 
     assign right_shift_arithmetic_sol = $signed(a) >>> b[4:0];
     assign SLT = ($signed(a) < $signed(b))? 32'd1 : 32'd0;
+    assign SLTU = (a < b)? 32'd1 : 32'd0;
     always @(*) begin
 
     overflow = 1'b0;
@@ -139,6 +141,7 @@ module ALU_n_bit#(
         4'd9 : answer = right_shift_logical_sol;
         4'd10: answer = right_shift_arithmetic_sol;
         4'd11: answer = SLT;
+        4'd12: answer = SLTU;
         default: begin
                     answer = {WIDTH{1'b0}};
                     c_out  = 1'b0;
