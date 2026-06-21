@@ -52,7 +52,7 @@ module svt_tb;
         
         // Wait sufficient time for pipelined execution
         // Under ideal conditions, CPI ≈ 1. With stalls and iterative mul/div (32 cycles each), #15000 is safe.
-        #15000;  // Increased for iterative mul/div (32 cycles each)
+        #100000;  // Increased for iterative mul/div (32 cycles each)
         
         $display("\n=======================================================");
         $display("          SOFTWARE VERIFICATION TESTBENCH (SVT)          ");

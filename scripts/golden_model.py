@@ -59,11 +59,11 @@ def parse_imem(path):
 # 2. Tiny RV32I simulator
 #    Models the same word-indexed memory as the RTL:
 #    RTL uses memory[addr[ADDR_WIDTH+1:2]], i.e. word_index = (byte_addr >> 2) & 0xFF
-MEM_DEPTH = 256
+MEM_DEPTH = 2048
 
-IMEM_DEPTH = 256
+IMEM_DEPTH = 2048
 
-def simulate(instrs, max_cycles=1500):
+def simulate(instrs, max_cycles=100000):
     """
     Cycle-accurate RV32IM simulator mirroring the 5-stage pipeline RTL.
     Tracks structural hazards, data hazards (forwarding/load-use stalls),
