@@ -117,7 +117,18 @@ The **Software Verification Testbench (SVT)** uses a co-simulation approach wher
 
 The Verilog RTL simulates the program, and at the end of execution, `svt_tb.v` automatically runs absolute asserts to compare the hardware registers/memory against the golden `.hex` results.
 
-### 2. Regression Testing (`make regression`)
+### 2. Spike ISA Trace Co-Simulation
+For an even higher level of verification, the RTL trace can be bit-accurately compared against the official RISC-V **Spike ISA Simulator**. 
+- A custom parser (`scripts/spike_log_to_trace_csv.py`) normalizes Spike's memory map (`0x80000000`) to match the RTL (`0x00000000`).
+- The parser intelligently decodes PC-relative instructions (`JAL`, `JALR`, `AUIPC`) on-the-fly to subtract the base offset from the destination register writeback, eliminating false trace mismatches caused by pointer arithmetic differences across address spaces.
+- The RTL trace is similarly parsed (`scripts/rtl_log_to_trace_csv.py`) and passed to an `instr_trace_compare.py` script.
+
+### 3. Automated 1000-Instruction Stress Testing
+To heavily stress the pipeline, data hazards, and iterative math unit, a python test generator (`gen_1000.py`) is included. It randomly generates a 1000-instruction `.S` program exercising R-type, I-type, Branches, Jumps, U-Type, and M-extension instructions.
+- Instruction memory (`IMEM`) and Data memory (`DMEM`) are parameterized up to 2048 words to handle large tests.
+- The SVT golden model supports up to `100,000` cycles to easily absorb the massive iterative pipeline stalls (34 cycles per `mul`/`div`) triggered during aggressive randomization.
+
+### 4. Regression Testing (`make regression`)
 To run the automated, categorized regression suite across all 8 test categories:
 ```bash
 make regression
@@ -152,14 +163,14 @@ Running regression_tests/U-Type...
 
 If even one test category reports a mismatch, `make regression` exits with a non-zero code (`exit 1`) to fail the continuous integration pipeline.
 
-### 3. Continuous Integration (CI)
+### 5. Continuous Integration (CI)
 GitHub Actions are fully integrated via `.github/workflows/makefile.yml`. Every single commit and pull request triggers a runner that:
 1. Spins up an Ubuntu container.
 2. Installs `iverilog` and `python3` dependencies.
 3. Runs `make svt` to verify the baseline CPU integrity.
 4. Runs `make regression` to verify all 8 isolated hardware operations.
 
-### 4. Performance Counters & CPI Analysis
+### 6. Performance Counters & CPI Analysis
 The processor includes hardware performance counters that track cycles, instruction retirement, and various pipeline hazards. The cycle counter `total_cycles` automatically freezes once the processor reaches a halt condition and the pipeline has completely drained.
 
 At the end of any SVT run, the simulation prints a detailed characterization of the processor's execution:
@@ -248,8 +259,13 @@ When running a program with no control/data hazards and no M-type instructions (
 
 ### Install Prerequisites (Ubuntu/Linux)
 ```bash
+# Standard RTL Simulation tools
 sudo apt-get update
 sudo apt-get install -y iverilog python3
+
+# For custom assembly compilation and Spike Trace Co-Simulation:
+# You will need the RISC-V GNU Compiler Toolchain and Spike ISA Simulator.
+# Ensure `riscv64-unknown-elf-gcc` and `spike` are in your system PATH.
 ```
 
 ### Run Sanity Check Program
@@ -265,4 +281,27 @@ make regression
 ### Clean Simulation Binaries
 ```bash
 make clean
+```
+
+### Compile & Co-Simulate Custom Assembly
+To write, compile, and strictly trace-match a custom RISC-V assembly program against the Spike ISA Simulator:
+
+```bash
+# 1. Compile assembly to ELF targeting Spike's 0x80000000 memory map
+riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 -nostdlib -Wl,-N -Ttext=0x80000000 -Wl,--no-warn-rwx-segments regression_tests/Svt_custom_tests/test.S -o test.elf
+
+# 2. Run Spike ISA Simulator to generate golden commit trace
+spike --isa=rv32im -l --log-commits --pc=0x80000000 --instructions=1500 test.elf > spike.log 2>&1
+
+# 3. Extract raw Hex program for the RTL
+riscv64-unknown-elf-objcopy -O binary --only-section=.text test.elf test.bin
+hexdump -v -e '1/4 "%08x\n"' test.bin > regression_tests/Svt_custom_tests/program.hex
+
+# 4. Run RTL Simulation (SVT)
+make svt +TEST_DIR=regression_tests/Svt_custom_tests
+
+# 5. Convert Logs to standard CSV format and Compare!
+python3 scripts/spike_log_to_trace_csv.py --log spike.log --csv spike.csv
+python3 scripts/rtl_log_to_trace_csv.py --log rtl_trace.log --csv rtl.csv
+python3 ../riscv-dv/scripts/instr_trace_compare.py --csv_file_1 spike.csv --csv_name_1 Spike --csv_file_2 rtl.csv --csv_name_2 RTL
 ```
