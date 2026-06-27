@@ -93,6 +93,7 @@ module rv32im_pipelined #(
     reg [3:0]      mem_wb_byte_en;
 `endif
 
+`ifdef CPI
     // IF/ID Stage Validity
     reg            if_id_valid;
 
@@ -103,9 +104,11 @@ module rv32im_pipelined #(
     reg            id_ex_is_store;
     reg            id_ex_is_branch;
     reg            id_ex_is_jump;
-    reg            id_ex_is_jalr;
     reg            id_ex_valid;
+`endif
+    reg            id_ex_is_jalr;
 
+`ifdef CPI
     // EX/MEM Stage Classification & Validity
     reg            ex_mem_is_alu;
     reg            ex_mem_is_mul_div;
@@ -125,6 +128,7 @@ module rv32im_pipelined #(
     reg            mem_wb_is_jump;
     reg            mem_wb_valid;
     reg            mem_wb_branch_taken;
+`endif
 
     // =========================================================================
     // HAZARD DETECTION & FORWARDING UNIT
@@ -217,15 +221,21 @@ module rv32im_pipelined #(
         if (!rst_n) begin
             if_id_pc    <= 0;
             if_id_instr <= 32'h00000013; // NOP (addi x0, x0, 0)
+`ifdef CPI
             if_id_valid <= 1'b0;
+`endif
         end else if (flush) begin
             if_id_pc    <= 0;
             if_id_instr <= 32'h00000013; // NOP (addi x0, x0, 0)
+`ifdef CPI
             if_id_valid <= 1'b0;
+`endif
         end else if (!pipeline_stall) begin
             if_id_pc    <= PC;
             if_id_instr <= mem_instr;
+`ifdef CPI
             if_id_valid <= !halt;
+`endif
         end
     end
 
@@ -240,6 +250,7 @@ module rv32im_pipelined #(
     wire [6:0] funct7   = if_id_instr[31:25];     // Secondary function identifier
 
     // Instruction classification for performance counters
+`ifdef CPI
     wire id_is_alu      = (opcode == 7'b0110011 && funct7 != 7'b0000001) || // R-Type
                           (opcode == 7'b0010011) ||                         // I-Type
                           (opcode == 7'b0110111) ||                         // LUI
@@ -249,6 +260,7 @@ module rv32im_pipelined #(
     wire id_is_store    = (opcode == 7'b0100011);                           // SW
     wire id_is_branch   = (opcode == 7'b1100011);                           // B-Type
     wire id_is_jump     = (opcode == 7'b1101111) || (opcode == 7'b1100111);   // JAL, JALR
+`endif
     wire id_is_jalr     = (opcode == 7'b1100111);                             // JALR only
 
     // Control Unit outputs
@@ -314,14 +326,16 @@ module rv32im_pipelined #(
             id_ex_MemToReg      <= 0;
             id_ex_Branch        <= 0;
             id_ex_Jump          <= 0;
+            id_ex_is_jalr       <= 0;
+`ifdef CPI
             id_ex_is_alu        <= 0;
             id_ex_is_mul_div    <= 0;
             id_ex_is_load       <= 0;
             id_ex_is_store      <= 0;
             id_ex_is_branch     <= 0;
             id_ex_is_jump       <= 0;
-            id_ex_is_jalr       <= 0;
             id_ex_valid         <= 0;
+`endif
 `ifdef VERIFICATION
             id_ex_instr         <= 32'h00000013;
 `endif
@@ -344,14 +358,16 @@ module rv32im_pipelined #(
             id_ex_MemToReg      <= 0;
             id_ex_Branch        <= 0;
             id_ex_Jump          <= 0;
+            id_ex_is_jalr       <= 0;
+`ifdef CPI
             id_ex_is_alu        <= 0;
             id_ex_is_mul_div    <= 0;
             id_ex_is_load       <= 0;
             id_ex_is_store      <= 0;
             id_ex_is_branch     <= 0;
             id_ex_is_jump       <= 0;
-            id_ex_is_jalr       <= 0;
             id_ex_valid         <= 0;
+`endif
 `ifdef VERIFICATION
             id_ex_instr         <= 32'h00000013;
 `endif
@@ -377,14 +393,16 @@ module rv32im_pipelined #(
             id_ex_MemToReg      <= 0;
             id_ex_Branch        <= 0;
             id_ex_Jump          <= 0;
+            id_ex_is_jalr       <= 0;
+`ifdef CPI
             id_ex_is_alu        <= 0;
             id_ex_is_mul_div    <= 0;
             id_ex_is_load       <= 0;
             id_ex_is_store      <= 0;
             id_ex_is_branch     <= 0;
             id_ex_is_jump       <= 0;
-            id_ex_is_jalr       <= 0;
             id_ex_valid         <= 0;
+`endif
 `ifdef VERIFICATION
             id_ex_instr         <= 32'h00000013;
 `endif
@@ -407,14 +425,16 @@ module rv32im_pipelined #(
             id_ex_MemToReg      <= MemToReg;
             id_ex_Branch        <= Branch;
             id_ex_Jump          <= Jump;
+            id_ex_is_jalr       <= id_is_jalr;
+`ifdef CPI
             id_ex_is_alu        <= id_is_alu;
             id_ex_is_mul_div    <= id_is_mul_div;
             id_ex_is_load       <= id_is_load;
             id_ex_is_store      <= id_is_store;
             id_ex_is_branch     <= id_is_branch;
             id_ex_is_jump       <= id_is_jump;
-            id_ex_is_jalr       <= id_is_jalr;
             id_ex_valid         <= if_id_valid;
+`endif
 `ifdef VERIFICATION
             id_ex_instr         <= if_id_instr;
 `endif
@@ -513,7 +533,7 @@ module rv32im_pipelined #(
     always @(*) begin
         byte_en = 4'b0000;
         aligned_write_data = forwarded_read_data2;
-        if (id_ex_is_store) begin
+        if (id_ex_MemWrite) begin
             case(id_ex_funct3)
                 3'b000: begin // SB
                     byte_en = 4'b0001 << alu_result[1:0];
@@ -529,7 +549,7 @@ module rv32im_pipelined #(
                 end
                 default: byte_en = 4'b0000;
             endcase
-        end else if (id_ex_is_load) begin
+        end else if (id_ex_MemRead) begin
             byte_en = 4'b0000;
         end
     end
@@ -544,6 +564,9 @@ module rv32im_pipelined #(
             ex_mem_MemWrite         <= 0;
             ex_mem_MemToReg         <= 0;
             ex_mem_RegWrite         <= 0;
+            ex_mem_funct3           <= 0;
+            ex_mem_byte_en          <= 0;
+`ifdef CPI
             ex_mem_is_alu           <= 0;
             ex_mem_is_mul_div       <= 0;
             ex_mem_is_load          <= 0;
@@ -552,8 +575,7 @@ module rv32im_pipelined #(
             ex_mem_is_jump          <= 0;
             ex_mem_valid            <= 0;
             ex_mem_branch_taken     <= 0;
-            ex_mem_funct3           <= 0;
-            ex_mem_byte_en          <= 0;
+`endif
 `ifdef VERIFICATION
             ex_mem_pc               <= 0;
             ex_mem_instr            <= 32'h00000013;
@@ -568,6 +590,9 @@ module rv32im_pipelined #(
             ex_mem_MemRead          <= 0;
             ex_mem_MemWrite         <= 0;
             ex_mem_RegWrite         <= 0;
+            ex_mem_funct3           <= 0;
+            ex_mem_byte_en          <= 0;
+`ifdef CPI
             ex_mem_is_alu           <= 0;
             ex_mem_is_mul_div       <= 0;
             ex_mem_is_load          <= 0;
@@ -576,8 +601,7 @@ module rv32im_pipelined #(
             ex_mem_is_jump          <= 0;
             ex_mem_valid            <= 0;
             ex_mem_branch_taken     <= 0;
-            ex_mem_funct3           <= 0;
-            ex_mem_byte_en          <= 0;
+`endif
 `ifdef VERIFICATION
             ex_mem_pc               <= 0;
             ex_mem_instr            <= 32'h00000013;
@@ -595,6 +619,9 @@ module rv32im_pipelined #(
             ex_mem_MemWrite         <= id_ex_MemWrite;
             ex_mem_MemToReg         <= id_ex_MemToReg;
             ex_mem_RegWrite         <= id_ex_RegWrite;
+            ex_mem_funct3           <= id_ex_funct3;
+            ex_mem_byte_en          <= byte_en;
+`ifdef CPI
             ex_mem_is_alu           <= id_ex_is_alu;
             ex_mem_is_mul_div       <= id_ex_is_mul_div;
             ex_mem_is_load          <= id_ex_is_load;
@@ -603,8 +630,7 @@ module rv32im_pipelined #(
             ex_mem_is_jump          <= id_ex_is_jump;
             ex_mem_valid            <= id_ex_valid;
             ex_mem_branch_taken     <= id_ex_Branch & id_ex_branch_taken;
-            ex_mem_funct3           <= id_ex_funct3;
-            ex_mem_byte_en          <= byte_en;
+`endif
 `ifdef VERIFICATION
             ex_mem_pc               <= id_ex_pc;
             ex_mem_instr            <= id_ex_instr;
@@ -636,7 +662,7 @@ module rv32im_pipelined #(
     wire [1:0] byte_offset = ex_mem_alu_result[1:0];
     always @(*) begin
         aligned_read_data = mem_data;
-        if (ex_mem_is_load) begin
+        if (ex_mem_MemRead) begin
             case(ex_mem_funct3)
                 3'b000: begin // LB
                     case(byte_offset)
@@ -680,6 +706,8 @@ module rv32im_pipelined #(
             mem_wb_rd            <= 0;
             mem_wb_MemToReg      <= 0;
             mem_wb_RegWrite      <= 0;
+            mem_wb_funct3        <= 0;
+`ifdef CPI
             mem_wb_is_alu        <= 0;
             mem_wb_is_mul_div    <= 0;
             mem_wb_is_load       <= 0;
@@ -688,7 +716,7 @@ module rv32im_pipelined #(
             mem_wb_is_jump       <= 0;
             mem_wb_valid         <= 0;
             mem_wb_branch_taken  <= 0;
-            mem_wb_funct3        <= 0;
+`endif
 `ifdef VERIFICATION
             mem_wb_pc            <= 0;
             mem_wb_instr         <= 32'h00000013;
@@ -706,6 +734,8 @@ module rv32im_pipelined #(
             mem_wb_rd            <= ex_mem_rd;
             mem_wb_MemToReg      <= ex_mem_MemToReg;
             mem_wb_RegWrite      <= ex_mem_RegWrite;
+            mem_wb_funct3        <= ex_mem_funct3;
+`ifdef CPI
             mem_wb_is_alu        <= ex_mem_is_alu;
             mem_wb_is_mul_div    <= ex_mem_is_mul_div;
             mem_wb_is_load       <= ex_mem_is_load;
@@ -714,7 +744,7 @@ module rv32im_pipelined #(
             mem_wb_is_jump       <= ex_mem_is_jump;
             mem_wb_valid         <= ex_mem_valid;
             mem_wb_branch_taken  <= ex_mem_branch_taken;
-            mem_wb_funct3        <= ex_mem_funct3;
+`endif
 `ifdef VERIFICATION
             mem_wb_pc            <= ex_mem_pc;
             mem_wb_instr         <= ex_mem_instr;
@@ -734,6 +764,7 @@ module rv32im_pipelined #(
     // =========================================================================
     assign wb_write_data = (mem_wb_MemToReg) ? mem_wb_read_data : mem_wb_alu_result;
 
+`ifdef CPI
     // =========================================================================
     // PERFORMANCE COUNTER ACCUMULATION BLOCKS
     // =========================================================================
@@ -805,5 +836,6 @@ module rv32im_pipelined #(
                 cnt_flush_cycles <= cnt_flush_cycles + 1;
         end
     end
+`endif
 
 endmodule
