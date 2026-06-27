@@ -1,9 +1,12 @@
 1.use typedefs, structs, special test for hazards and forwarding units.
-2.Performance counters and making CPI ideal by checking cpi of instrs other than M-type
-3.verilator support. linting. Assertions if preferred.
+3.verilator support, Assertions if preferred.
 4.Merge instr mem and data mem if preferred.
 5.Make synthesis and study reports - optimize if necessary.
 6.Out of order execution
+
+Branch predictions
+Cache hiearchy
+Interrupts etc
 
 Intel optimization reference manual. (https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)
 
