@@ -91,7 +91,15 @@ RISCV_RV32IM_Pipelined/
 │   ├── svt_tb.v                  # Co-simulation verification testbench
 │   └── test_lw_sw.v              # Simple memory access sanity testbench
 ├── scripts/
-│   └── golden_model.py           # Cycle-accurate python instruction set simulator (ISS)
+│   ├── golden_model.py           # Cycle-accurate python instruction set simulator (ISS)
+│   ├── compile_rv32im.sh         # Script to compile assembly programs
+│   ├── spike_log_to_trace_csv.py # Parser converting Spike log to trace CSV
+│   └── rtl_log_to_trace_csv.py   # Parser converting RTL trace log to CSV
+├── docs/
+│   ├── DATAPATH                  # Basic datapath ASCII diagram
+│   ├── formats.txt               # Instruction formats documentation
+│   ├── future_improvements.txt   # Planned/proposed improvements
+│   └── instructions.txt          # List of supported instructions
 ├── regression_tests/
 │   ├── I-Type/                   # Hex tests for immediate arithmetic
 │   ├── R-Type/                   # Hex tests for register arithmetic
@@ -105,6 +113,7 @@ RISCV_RV32IM_Pipelined/
 │   └── workflows/
 │       └── makefile.yml          # GitHub Actions CI Workflow config
 ├── Makefile                      # Build automation script
+├── gen_1000.py                   # Automated 1000-instruction random assembly generator
 └── README.md
 ```
 
