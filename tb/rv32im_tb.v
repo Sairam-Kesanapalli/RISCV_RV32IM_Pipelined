@@ -1,4 +1,5 @@
 `timescale 1ns/1ps
+`define CPI
 module rv32im_tb;
 reg clk;
 reg rst_n;

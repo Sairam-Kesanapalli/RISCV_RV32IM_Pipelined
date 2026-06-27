@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 `define VERIFICATION
+`define CPI
 
 module svt_tb;
     reg clk;
