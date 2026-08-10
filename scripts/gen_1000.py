@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+"""
+gen_1000.py — Automated 1000-instruction random assembly test generator.
+
+Generates a stress-test assembly program (.S) exercising R-type, I-type,
+M-extension (MUL/DIV), LUI, Branch, and Jump instructions to heavily
+exercise the RV32IM pipelined datapath, hazard detection, and forwarding.
+
+Output: regression_tests/Svt_custom_tests/test.S
+"""
+
 import random
 
 # Registers excluding x0 (zero) and x31 (which we might reserve for special use or just use normally)
