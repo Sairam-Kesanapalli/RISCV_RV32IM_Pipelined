@@ -45,7 +45,11 @@ def gen_instr():
     # AUIPC removed from random pool to prevent pointer arithmetic mismatches
 
 def main():
-    with open("regression_tests/Svt_custom_tests/test.S", "w") as f:
+    # Resolve project root (parent of scripts/) so paths work from any CWD
+    import os
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    out_path = os.path.join(project_root, "regression_tests", "Svt_custom_tests", "test.S")
+    with open(out_path, "w") as f:
         f.write(".section .text\n")
         f.write(".globl _start\n")
         f.write("_start:\n")

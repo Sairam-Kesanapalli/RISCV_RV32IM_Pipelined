@@ -94,7 +94,8 @@ RISCV_RV32IM_Pipelined/
 │   ├── golden_model.py           # Cycle-accurate python instruction set simulator (ISS)
 │   ├── compile_rv32im.sh         # Script to compile assembly programs
 │   ├── spike_log_to_trace_csv.py # Parser converting Spike log to trace CSV
-│   └── rtl_log_to_trace_csv.py   # Parser converting RTL trace log to CSV
+│   ├── rtl_log_to_trace_csv.py   # Parser converting RTL trace log to CSV
+│   └── gen_1000.py               # Automated 1000-instruction random assembly generator
 ├── docs/
 │   ├── DATAPATH                  # Basic datapath ASCII diagram
 │   ├── formats.txt               # Instruction formats documentation
@@ -113,7 +114,6 @@ RISCV_RV32IM_Pipelined/
 │   └── workflows/
 │       └── makefile.yml          # GitHub Actions CI Workflow config
 ├── Makefile                      # Build automation script
-├── gen_1000.py                   # Automated 1000-instruction random assembly generator
 └── README.md
 ```
 
@@ -133,7 +133,7 @@ For an even higher level of verification, the RTL trace can be bit-accurately co
 - The RTL trace is similarly parsed (`scripts/rtl_log_to_trace_csv.py`) and passed to an `instr_trace_compare.py` script.
 
 ### 3. Automated 1000-Instruction Stress Testing
-To heavily stress the pipeline, data hazards, and iterative math unit, a python test generator (`gen_1000.py`) is included. It randomly generates a 1000-instruction `.S` program exercising R-type, I-type, Branches, Jumps, U-Type, and M-extension instructions.
+To heavily stress the pipeline, data hazards, and iterative math unit, a python test generator (`scripts/gen_1000.py`) is included. It randomly generates a 1000-instruction `.S` program exercising R-type, I-type, Branches, Jumps, U-Type, and M-extension instructions.
 - Instruction memory (`IMEM`) and Data memory (`DMEM`) are parameterized up to 2048 words to handle large tests.
 - The SVT golden model supports up to `100,000` cycles to easily absorb the massive iterative pipeline stalls (34 cycles per `mul`/`div`) triggered during aggressive randomization.
 
