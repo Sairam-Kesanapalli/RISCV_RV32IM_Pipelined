@@ -12,7 +12,6 @@ Intel optimization reference manual. (https://www.intel.com/content/www/us/en/de
 
 
 
-//I want to implement the performance counters for this repo. As it is currently just multi cycle, I think csr implementing mcycle, minstret is enough, we could implement other stall related csr stuff later after pipelining and I think it would be better if we have a non synthasizable rtl or python file which will show CPI overall or for each instruction, shows how expensive each instruction is, how good your controller is when we specifically call it like "make performance" something similar. 
 Coming to the implementaion:-
 1st phase adding mcycle, minstret
 2nd phase mapping to csr address and just read permission
